@@ -1,0 +1,281 @@
+// Learn more: https://pris.ly/d/prisma-schema
+//
+// Runs on the Hostinger MariaDB instance (srv1826.hstgr.io) via DATABASE_URL.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// Roles and statuses are stored as plain strings rather than native enums so a
+// new role can ship without a schema migration. The allowed values and all
+// permission logic live in lib/rbac.ts — keep the two in sync.
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  role      String   @default("CLIENT") // SUPER_ADMIN | ADMIN | MANAGER | CLIENT
+  status    String   @default("INVITED") // INVITED | ACTIVE | DISABLED
+  googleId  String?  @unique
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ownedClient    Client?         @relation("ClientOwner")
+  createdClients Client[]        @relation("ClientCreator")
+  managedClients ClientManager[]
+
+  createdOnboardingForms OnboardingForm[]   @relation("OnboardingCreator")
+  editedOnboardingAnswers OnboardingAnswer[] @relation("OnboardingAnswerEditor")
+
+  createdStrategySheets StrategySheet[]   @relation("StrategyCreator")
+  strategyComments      StrategyComment[] @relation("StrategyCommentAuthor")
+
+  @@index([role])
+}
+
+model Client {
+  id            String   @id @default(cuid())
+  name          String
+  company       String?
+  status        String   @default("ACTIVE") // ACTIVE | PAUSED | ARCHIVED
+  notes         String? @db.Text
+  driveFolderId String?
+  // Full Google Drive folder/file link, pasted by an admin. Kept separate from
+  // driveFolderId (an API id) because the UI only ever needs something to open.
+  driveUrl      String? @db.Text
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // The client's own login account, bound by email at first Google sign-in.
+  ownerUserId String? @unique
+  owner       User?   @relation("ClientOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+
+  createdById String?
+  createdBy   User?   @relation("ClientCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  managers ClientManager[]
+  links    ClientLink[]
+
+  onboardingForm OnboardingForm?
+  strategySheet  StrategySheet?
+
+  @@index([status])
+}
+
+// A client's social / external accounts. A separate table rather than columns
+// because a client may have any number of them, and the set of platforms is
+// open-ended — the admin types whatever label fits.
+model ClientLink {
+  id        String   @id @default(cuid())
+  clientId  String
+  label     String
+  url       String   @db.Text
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+}
+
+// Which team members are assigned to which clients.
+model ClientManager {
+  clientId   String
+  userId     String
+  assignedAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([clientId, userId])
+  @@index([userId])
+}
+
+// The kickoff questionnaire. One per client (@unique clientId) rather than a
+// shared template: every client's question set is built and tuned on its own,
+// seeded from DEFAULT_SECTIONS in lib/onboarding.ts. Statuses are plain strings
+// like every other status column — see lib/onboarding.ts for allowed values.
+model OnboardingForm {
+  id          String    @id @default(cuid())
+  clientId    String    @unique
+  title       String    @default("Onboarding Form")
+  description String?   @db.Text
+  status      String    @default("DRAFT") // DRAFT | PUBLISHED | SUBMITTED
+  publishedAt DateTime?
+  submittedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  createdById String?
+  createdBy   User?   @relation("OnboardingCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  client   Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  sections OnboardingSection[]
+
+  @@index([status])
+}
+
+model OnboardingSection {
+  id        String @id @default(cuid())
+  formId    String
+  title     String
+  sortOrder Int    @default(0)
+
+  form      OnboardingForm       @relation(fields: [formId], references: [id], onDelete: Cascade)
+  questions OnboardingQuestion[]
+
+  @@index([formId])
+}
+
+model OnboardingQuestion {
+  id        String  @id @default(cuid())
+  sectionId String
+  prompt    String  @db.Text
+  helpText  String? @db.Text
+  // SHORT_TEXT | LONG_TEXT | SINGLE_CHOICE — see QUESTION_TYPES in lib/onboarding.ts
+  type      String  @default("LONG_TEXT")
+  // JSON array of choice labels, only read when type is SINGLE_CHOICE.
+  options   String? @db.Text
+  required  Boolean @default(false)
+  sortOrder Int     @default(0)
+
+  section OnboardingSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  answer  OnboardingAnswer?
+
+  @@index([sectionId])
+}
+
+// One answer per question. Editing a question in the builder preserves its id,
+// so reworded prompts keep the answer the client already gave; only a deleted
+// question drops its answer (via cascade).
+model OnboardingAnswer {
+  id         String   @id @default(cuid())
+  questionId String   @unique
+  value      String   @db.Text
+  // Who last touched it — lets the UI show "edited by your team" on an answer
+  // an admin overrode after the client submitted.
+  updatedById   String?
+  updatedByRole String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  question  OnboardingQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  updatedBy User?              @relation("OnboardingAnswerEditor", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+// The strategy document the team writes FOR the client — the mirror image of
+// the onboarding form, where the client writes for the team. One per client,
+// seeded from DEFAULT_SECTIONS in lib/strategy.ts and then fully restructurable.
+//
+// Lifecycle: DRAFT (client sees nothing) -> PUBLISHED (client reads it and can
+// leave feedback) -> APPROVED (client signed off). See lib/strategy.ts.
+model StrategySheet {
+  id          String    @id @default(cuid())
+  clientId    String    @unique
+  title       String    @default("Strategy Sheet")
+  description String?   @db.Text
+  status      String    @default("DRAFT") // DRAFT | PUBLISHED | APPROVED
+  publishedAt DateTime?
+  approvedAt  DateTime?
+
+  // The sign-off block. Free text rather than user relations: the strategist of
+  // record is often written down before that person has a portal account, and
+  // the sheet is a document — it records who signed, not who clicked.
+  strategistName String?
+  strategistDate DateTime?
+  teamLeadName   String?
+  teamLeadDate   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdById String?
+  createdBy   User?   @relation("StrategyCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  client   Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  sections StrategySection[]
+  comments StrategyComment[]
+
+  @@index([status])
+}
+
+// A block of the document. `kind` decides how it renders and what the builder
+// offers:
+//   FIELDS — label/value rows (the "01 · Client Strategy Overview" tables)
+//   TABLE  — custom columns with matching cells (the Content Pillars grid)
+//   NOTES  — a list of bullets (the "Key patterns" list)
+model StrategySection {
+  id        String  @id @default(cuid())
+  sheetId   String
+  title     String
+  kind      String  @default("FIELDS") // FIELDS | TABLE | NOTES
+  // Optional lead-in paragraph rendered above the rows, e.g. the competitor
+  // gap analysis that sits with its table.
+  intro     String? @db.Text
+  sortOrder Int     @default(0)
+
+  sheet   StrategySheet    @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  columns StrategyColumn[]
+  rows    StrategyRow[]
+
+  @@index([sheetId])
+}
+
+// Only read when the section is a TABLE. Column order is the positional index
+// that StrategyRow.values lines up against.
+model StrategyColumn {
+  id        String @id @default(cuid())
+  sectionId String
+  label     String
+  sortOrder Int    @default(0)
+
+  section StrategySection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@index([sectionId])
+}
+
+// One row of whichever shape the section is.
+//
+// `cells` is a JSON array of strings rather than a cell table — the same
+// approach OnboardingQuestion.options takes. A row is always read and written
+// whole, so a join table would buy nothing and cost a query per cell. Cells are
+// positional against the section's columns; a short array just renders blanks,
+// which is what keeps "add a column" from having to backfill every row.
+//
+// Named `cells`, not `values`: VALUES is a reserved word in MySQL. No default
+// either — MySQL rejects DEFAULT on a TEXT column, so writers always pass "[]".
+model StrategyRow {
+  id        String  @id @default(cuid())
+  sectionId String
+  // FIELDS: the field name. TABLE and NOTES: unused.
+  label     String? @db.Text
+  cells     String  @db.Text
+  sortOrder Int     @default(0)
+
+  section StrategySection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@index([sectionId])
+}
+
+// The feedback thread. One conversation per sheet, shared by the client and the
+// team — authorRole is what the UI aligns and colours on, so a deleted user
+// still renders on the correct side.
+model StrategyComment {
+  id         String   @id @default(cuid())
+  sheetId    String
+  body       String   @db.Text
+  authorId   String?
+  authorRole String?
+  createdAt  DateTime @default(now())
+
+  sheet  StrategySheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  author User?         @relation("StrategyCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([sheetId])
+}
