@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/lib/generated/prisma
+
+# local sqlite databases (the app runs on Hostinger MariaDB)
+*.db
+*.db-journal
