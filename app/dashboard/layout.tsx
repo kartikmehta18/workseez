@@ -15,7 +15,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <DashboardSidebar actor={actor} />
       <SidebarInset>
         <header className="bg-background/80 sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b px-3 backdrop-blur-sm sm:px-4">
-          <Link href="/dashboard" className="flex min-w-0 items-center gap-2">
+          {/* <Link href="/dashboard" className="flex min-w-0 items-center gap-2">
             <Image
               src="/logo.jpeg"
               alt=""
@@ -24,9 +24,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
               className="size-7 shrink-0 rounded-md border object-cover"
             />
             <span className="truncate text-sm font-semibold tracking-tight">Workseez</span>
-          </Link>
+          </Link> */}
 
-          <Separator orientation="vertical" className="mx-1 h-4" />
+          {/* <Separator orientation="vertical" className="mx-1 h-4" /> */}
           <SidebarTrigger />
 
           <div className="ml-auto flex items-center gap-2">

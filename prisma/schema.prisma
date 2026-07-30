@@ -36,6 +36,11 @@ model User {
   createdStrategySheets StrategySheet[]   @relation("StrategyCreator")
   strategyComments      StrategyComment[] @relation("StrategyCommentAuthor")
 
+  createdContentCalendars ContentCalendar[] @relation("ContentCalendarCreator")
+  createdContentPosts     ContentPost[]     @relation("ContentPostCreator")
+  contentComments         ContentComment[]  @relation("ContentCommentAuthor")
+  uploadedContentAssets   ContentAsset[]    @relation("ContentAssetUploader")
+
   @@index([role])
 }
 
@@ -62,8 +67,9 @@ model Client {
   managers ClientManager[]
   links    ClientLink[]
 
-  onboardingForm OnboardingForm?
-  strategySheet  StrategySheet?
+  onboardingForm  OnboardingForm?
+  strategySheet   StrategySheet?
+  contentCalendar ContentCalendar?
 
   @@index([status])
 }
@@ -278,4 +284,155 @@ model StrategyComment {
   author User?         @relation("StrategyCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([sheetId])
+}
+
+// The delivery schedule — every reel and post the team makes for a client, with
+// its script, its Drive files and the client's feedback on it. One per client,
+// like the onboarding form and the strategy sheet.
+//
+// Unlike those two the calendar has no status of its own: it is a container that
+// fills up over months, so publishing happens per post (ContentPost.sharedAt).
+model ContentCalendar {
+  id       String @id @default(cuid())
+  clientId String @unique
+  title    String @default("Content Calendar")
+
+  // The day cycle 1 starts. Cycles are cycleLength days long and run
+  // back-to-back from here, so moving this date shifts every cycle at once —
+  // which is the whole point of storing an anchor instead of per-cycle rows.
+  // Null until an admin sets it; the calendar then shows one flat list.
+  cycleStart  DateTime?
+  cycleLength Int       @default(30)
+
+  // Drive parents for the whole client. A post's own raw folder is created
+  // underneath rawFolderId the first time someone uploads to that post.
+  // The *Url columns are what the UI opens; the *Id columns are what the Drive
+  // API takes — the same split Client.driveFolderId / Client.driveUrl uses.
+  rawFolderId    String?
+  rawFolderUrl   String? @db.Text
+  editsFolderId  String?
+  editsFolderUrl String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdById String?
+  createdBy   User?   @relation("ContentCalendarCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  client Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  posts  ContentPost[]
+}
+
+// One reel / post / story. Everything on it is editable by the team at any
+// point, including after it has gone out — a published reel whose caption is
+// corrected is still the same row.
+model ContentPost {
+  id         String @id @default(cuid())
+  calendarId String
+  title      String
+  // REEL | POST | CAROUSEL | STORY | YOUTUBE — see CONTENT_KINDS in lib/content.ts.
+  kind       String @default("REEL")
+  // SCRIPTING | SHOOT_PENDING | IN_PRODUCTION | SCHEDULED | PUBLISHED
+  status     String @default("SCRIPTING")
+
+  // The day it is planned for. Drives which cycle it lands in and where it sits
+  // in the month grid. Nullable so a post can be written before it is dated.
+  scheduledFor DateTime?
+
+  // Set the moment the team publishes the post to the client; null means the
+  // client sees nothing. Kept separate from `status` because the two answer
+  // different questions — status is where the work is, sharedAt is who can see it.
+  sharedAt DateTime?
+
+  // Raises the "Upload raw video" call-out on the client's card. A flag rather
+  // than a status because it can be true at several points in the workflow.
+  needsRawUpload Boolean @default(false)
+
+  caption String? @db.Text
+  notes   String? @db.Text
+
+  // Direct links to the finished files, pasted or filled in by an upload.
+  rawFileUrl   String? @db.Text
+  finalEditUrl String? @db.Text
+
+  // This post's own folders. rawFolderId is created on first upload.
+  rawFolderId    String?
+  rawFolderUrl   String? @db.Text
+  editsFolderUrl String? @db.Text
+
+  // Tie-break for posts sharing a date; also the order of undated posts.
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdById String?
+  createdBy   User?   @relation("ContentPostCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  calendar ContentCalendar     @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  lines    ContentScriptLine[]
+  comments ContentComment[]
+  assets   ContentAsset[]
+
+  @@index([calendarId])
+  @@index([status])
+  @@index([scheduledFor])
+}
+
+// A labelled line of the script — "Shoot Direction", "Text hook", "Voice over",
+// "Cta", "GUIDE" and anything else a strategist types. Rows rather than one
+// blob so a label can be restyled, reordered or filtered without parsing prose,
+// and so the label set stays open-ended per post.
+model ContentScriptLine {
+  id        String @id @default(cuid())
+  postId    String
+  label     String
+  body      String @db.Text
+  sortOrder Int    @default(0)
+
+  post ContentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+// Feedback on one post. Same shape as StrategyComment — authorRole is what the
+// UI aligns on, so a comment outlives the account that wrote it.
+model ContentComment {
+  id         String   @id @default(cuid())
+  postId     String
+  body       String   @db.Text
+  authorId   String?
+  authorRole String?
+  createdAt  DateTime @default(now())
+
+  post   ContentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User?       @relation("ContentCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([postId])
+}
+
+// A file uploaded against a post — raw footage from the client, or an edit from
+// the team. The bytes live in Drive; this is the record of what went where, so
+// the card can list uploads without an API call per render.
+model ContentAsset {
+  id     String @id @default(cuid())
+  postId String
+  name   String
+  // RAW | EDIT — see ASSET_KINDS in lib/content.ts.
+  kind   String @default("RAW")
+
+  driveFileId String?
+  url         String? @db.Text
+  mimeType    String?
+  // Float, not BigInt: MySQL DOUBLE holds every size exactly up to 2^53 bytes
+  // and, unlike BigInt, survives the trip through a React server component.
+  sizeBytes   Float?
+
+  uploadedById String?
+  uploadedBy   User?   @relation("ContentAssetUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+
+  post ContentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
 }
