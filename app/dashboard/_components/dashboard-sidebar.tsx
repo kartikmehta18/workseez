@@ -3,7 +3,15 @@
 import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { ClipboardList, LayoutDashboard, Settings, Target, Users, UserCog } from "lucide-react"
+import {
+  CalendarDays,
+  ClipboardList,
+  LayoutDashboard,
+  Settings,
+  Target,
+  Users,
+  UserCog,
+} from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -35,6 +43,7 @@ function navFor(role: Actor["role"]): { main: NavItem[]; admin: NavItem[] } {
         // out of nowhere one day.
         { href: "/dashboard/onboarding", label: "Onboarding Form", icon: ClipboardList },
         { href: "/dashboard/strategy", label: "Strategy Sheet", icon: Target },
+        { href: "/dashboard/content", label: "Content Calendar", icon: CalendarDays },
       ],
       admin: [],
     }
@@ -45,6 +54,7 @@ function navFor(role: Actor["role"]): { main: NavItem[]; admin: NavItem[] } {
     { href: "/dashboard/clients", label: "Clients", icon: Users },
     { href: "/dashboard/onboarding", label: "Onboarding", icon: ClipboardList },
     { href: "/dashboard/strategy", label: "Strategy", icon: Target },
+    { href: "/dashboard/content", label: "Content", icon: CalendarDays },
   ]
 
   // Only the Super Admin can reach role management.
@@ -94,11 +104,14 @@ export function DashboardSidebar({ actor }: { actor: Actor }) {
 
   return (
     <Sidebar collapsible="icon" className="border-r">
-      <SidebarHeader className="border-sidebar-border border-b p-3">
+      {/* Collapsed, the rail is exactly --sidebar-width-icon (3rem). The header
+          drops to p-2 and the link to p-0 so 8 + 32 + 8 lands on that 48px
+          instead of overflowing and pushing the logo off-centre. */}
+      <SidebarHeader className="border-sidebar-border border-b p-3 group-data-[collapsible=icon]:p-2">
         <Link
           href="/dashboard"
           onClick={closeOnMobile}
-          className="hover:bg-sidebar-accent flex items-center gap-2.5 rounded-lg p-1 transition-colors group-data-[collapsible=icon]:justify-center"
+          className="hover:bg-sidebar-accent flex items-center gap-2.5 rounded-lg p-1 transition-colors group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0"
         >
           <Image
             src="/logo.jpeg"
@@ -118,9 +131,16 @@ export function DashboardSidebar({ actor }: { actor: Actor }) {
         </Link>
       </SidebarHeader>
 
-      <SidebarContent className="px-2 py-2">
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
+      {/* Collapsed, the horizontal padding is dropped so only the group's own
+          p-2 remains: 8 + 32 (the forced size-8 button) + 8 fills the 48px rail
+          exactly. Keeping px-2 here too would total 64px of gutter and shunt
+          every icon off-centre to the right. */}
+      <SidebarContent className="px-2 py-2 group-data-[collapsible=icon]:px-0">
+        {/* Collapsed, the label is removed from the flow rather than left at
+            opacity-0 — the stock -mt-8 trick still leaves the group's vertical
+            padding behind, which reads as a stray gap between the icon runs. */}
+        <SidebarGroup className="group-data-[collapsible=icon]:py-0">
+          <SidebarGroupLabel className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase group-data-[collapsible=icon]:hidden">
             Workspace
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -129,8 +149,8 @@ export function DashboardSidebar({ actor }: { actor: Actor }) {
         </SidebarGroup>
 
         {nav.admin.length > 0 && (
-          <SidebarGroup>
-            <SidebarGroupLabel className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
+          <SidebarGroup className="group-data-[collapsible=icon]:py-0">
+            <SidebarGroupLabel className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase group-data-[collapsible=icon]:hidden">
               Administration
             </SidebarGroupLabel>
             <SidebarGroupContent>

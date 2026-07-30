@@ -1,9 +1,10 @@
 "use client" // Error boundaries must be Client Components.
 
 import { useEffect } from "react"
-import { TriangleAlert } from "lucide-react"
+import Link from "next/link"
 
-import { Button } from "@/components/ui/button"
+import { ErrorScreen } from "@/components/error-screen"
+import { Button, buttonVariants } from "@/components/ui/button"
 
 /**
  * Catches uncaught exceptions from any dashboard page — most likely the remote
@@ -25,27 +26,27 @@ export default function DashboardError({
   }, [error])
 
   return (
-    <div className="flex min-h-[60vh] items-center justify-center">
-      <div className="w-full max-w-md rounded-lg border p-8 text-center">
-        <span className="bg-destructive/10 text-destructive mx-auto flex size-11 items-center justify-center rounded-full">
-          <TriangleAlert className="size-5" />
-        </span>
-        <h2 className="text-foreground mt-5 text-lg font-semibold tracking-tight">
-          Something went wrong
-        </h2>
-        <p className="text-muted-foreground mt-2 text-sm">
-          We couldn&apos;t load this page. This is usually temporary — try again in a
-          moment.
-        </p>
-        {error.digest ? (
-          <p className="text-muted-foreground mt-3 font-mono text-xs">
-            Reference: {error.digest}
+    <ErrorScreen
+      className="min-h-[75vh]"
+      code="500"
+      title="Something went wrong"
+      description={
+        <>
+          <p>We couldn&apos;t load this page, but don&apos;t worry!</p>
+          <p className="mt-3">
+            This is usually temporary — try again in a moment.
           </p>
-        ) : null}
-        <Button className="mt-6 w-full" onClick={() => unstable_retry()}>
-          Try again
-        </Button>
-      </div>
-    </div>
+        </>
+      }
+      actions={
+        <>
+          <Button onClick={() => unstable_retry()}>Try again</Button>
+          <Link href="/dashboard" className={buttonVariants({ variant: "outline" })}>
+            Back to dashboard
+          </Link>
+        </>
+      }
+      footnote={error.digest ? `Reference: ${error.digest}` : null}
+    />
   )
 }

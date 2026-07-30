@@ -5,8 +5,10 @@ import { prisma } from "@/lib/db"
 import { requireActor } from "@/lib/auth"
 import { getVisibleClient } from "@/lib/clients"
 import { can } from "@/lib/rbac"
+import { calendarProgress } from "@/lib/content"
 import { formProgress } from "@/lib/onboarding"
 import { sheetProgress } from "@/lib/strategy"
+import { CalendarProgressBar } from "@/app/dashboard/content/_components/content-badges"
 import {
   FormStatusBadge,
   ProgressBar,
@@ -28,16 +30,6 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const client = await prisma.client.findUnique({ where: { id }, select: { name: true } })
   return { title: client ? `${client.name} — Workseez` : "Client — Workseez" }
 }
-
-// Modules that are designed but not built yet. Shown as disabled so the shape
-// of the client workspace is visible without pretending they work.
-const UPCOMING = [
-  {
-    icon: CalendarDays,
-    title: "Content Calendar",
-    description: "Scheduled posts, scripts, shoot direction and status tracking.",
-  },
-]
 
 export default async function ClientProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -83,6 +75,24 @@ export default async function ClientProfilePage({ params }: { params: Promise<{ 
       })
     : null
   const strategyProgress = strategy ? sheetProgress(strategy) : null
+
+  const calendar = can(actor, "content:manage")
+    ? await prisma.contentCalendar.findUnique({
+        where: { clientId: client.id },
+        select: {
+          title: true,
+          posts: {
+            select: {
+              status: true,
+              sharedAt: true,
+              needsRawUpload: true,
+              _count: { select: { comments: true } },
+            },
+          },
+        },
+      })
+    : null
+  const calendarStats = calendar ? calendarProgress(calendar.posts) : null
 
   const teamMembers = canAssign
     ? await prisma.user.findMany({
@@ -315,18 +325,54 @@ export default async function ClientProfilePage({ params }: { params: Promise<{ 
         </Link>
       ) : null}
 
-      <div className="mt-8">
-        <h2 className="text-muted-foreground text-sm font-medium">Coming next</h2>
-        <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {UPCOMING.map(({ icon: Icon, title, description }) => (
-            <div key={title} className="rounded-lg border border-dashed p-5 opacity-70">
-              <Icon className="text-muted-foreground size-5" />
-              <p className="mt-3 text-sm font-medium">{title}</p>
-              <p className="text-muted-foreground mt-1 text-xs">{description}</p>
-            </div>
-          ))}
-        </div>
-      </div>
+      {calendar && calendarStats ? (
+        <Link
+          href={`/dashboard/clients/${client.id}/content`}
+          className="group hover:border-primary/40 mt-4 flex flex-col rounded-lg border p-5 transition-all hover:shadow-sm"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <CalendarDays className="text-muted-foreground size-4 shrink-0" />
+            <h2 className="group-hover:text-primary font-medium transition-colors">
+              {calendar.title}
+            </h2>
+            {calendarStats.total - calendarStats.shared > 0 ? (
+              <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">
+                {calendarStats.total - calendarStats.shared} unpublished
+              </span>
+            ) : null}
+            {calendar.posts.some((post) => post.needsRawUpload) ? (
+              <span className="rounded bg-rose-50 px-1.5 py-0.5 text-xs font-medium text-rose-700">
+                waiting on footage
+              </span>
+            ) : null}
+            <ArrowRight className="text-muted-foreground ml-auto size-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+          </div>
+          <div className="mt-4 max-w-md">
+            <CalendarProgressBar
+              percent={calendarStats.percent}
+              published={calendarStats.published}
+              total={calendarStats.total}
+            />
+          </div>
+        </Link>
+      ) : can(actor, "content:manage") ? (
+        <Link
+          href={`/dashboard/clients/${client.id}/content`}
+          className="group hover:border-primary/40 mt-4 flex items-center gap-3 rounded-lg border border-dashed p-5 transition-colors"
+        >
+          <CalendarDays className="text-muted-foreground size-5 shrink-0" />
+          <div className="min-w-0">
+            <p className="group-hover:text-primary text-sm font-medium transition-colors">
+              Set up the content calendar
+            </p>
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              Scripts, shoot direction, dates and Drive folders — published to {client.name} post by
+              post.
+            </p>
+          </div>
+          <ArrowRight className="text-muted-foreground ml-auto size-4 shrink-0" />
+        </Link>
+      ) : null}
     </div>
   )
 }

@@ -19,10 +19,14 @@ type Layout = {
   heading: string
   /** Paragraphs of body copy, rendered above the button. */
   body: string[]
+  /** Optional label/value rows — the post's date, status and so on. */
+  details?: { label: string; value: string }[]
   buttonLabel: string
   buttonHref: string
   /** Small print under the button, e.g. which account to sign in with. */
   footnote?: string
+  /** Closing line under the card. Defaults to the invite wording. */
+  footer?: string
 }
 
 const escapeHtml = (value: string) =>
@@ -36,9 +40,11 @@ function renderLayout({
   preheader,
   heading,
   body,
+  details,
   buttonLabel,
   buttonHref,
   footnote,
+  footer,
 }: Layout) {
   const paragraphs = body
     .map(
@@ -46,6 +52,23 @@ function renderLayout({
         `<p style="margin:0 0 16px;font-family:${FONT};font-size:15px;line-height:24px;color:#374151;">${line}</p>`,
     )
     .join("")
+
+  // Two-column rows in a bordered box. A <table> rather than a <dl> for the
+  // same reason as the rest of this file: Word's engine ignores most of it.
+  const detailRows =
+    details && details.length > 0
+      ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 20px;border:1px solid ${BORDER};border-radius:8px;background-color:#f9fafb;">
+          ${details
+            .map(
+              ({ label, value }) =>
+                `<tr>
+                  <td style="padding:10px 14px;font-family:${FONT};font-size:13px;line-height:20px;color:${MUTED};white-space:nowrap;">${escapeHtml(label)}</td>
+                  <td style="padding:10px 14px;font-family:${FONT};font-size:13px;line-height:20px;color:#111827;font-weight:600;">${escapeHtml(value)}</td>
+                </tr>`,
+            )
+            .join("")}
+        </table>`
+      : ""
 
   return `<!doctype html>
 <html lang="en">
@@ -77,6 +100,7 @@ function renderLayout({
               <td style="background-color:#ffffff;border:1px solid ${BORDER};border-top:0;border-radius:0 0 12px 12px;padding:36px 32px 32px;">
                 <h1 style="margin:0 0 18px;font-family:${FONT};font-size:22px;line-height:30px;font-weight:600;color:#0f172a;">${escapeHtml(heading)}</h1>
                 ${paragraphs}
+                ${detailRows}
 
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0 4px;">
                   <tr>
@@ -101,7 +125,10 @@ function renderLayout({
 
             <tr>
               <td align="center" style="padding:22px 16px 0;font-family:${FONT};font-size:12px;line-height:18px;color:${MUTED};">
-                You received this email because someone at Workseez invited you to the client portal.
+                ${escapeHtml(
+                  footer ??
+                    "You received this email because someone at Workseez invited you to the client portal.",
+                )}
               </td>
             </tr>
 
@@ -203,4 +230,202 @@ export async function sendClientInviteEmail({
   ])
 
   return sendMail({ to, subject: "Your Workseez portal is ready", html, text })
+}
+
+/* ------------------------------------------------------------------ *
+ * Content calendar
+ *
+ * Four notifications, in two directions. The client hears when work lands on
+ * their calendar or moves on; the team hears when the client does something
+ * they are waiting for. Nothing is sent for a post the client cannot see, so
+ * these are all fired after the state change, by the action that made it.
+ * ------------------------------------------------------------------ */
+
+const CONTENT_FOOTER = "You're getting this because you're on a Workseez content calendar."
+
+type PostMailBase = {
+  to: string
+  /** Who the mail is about — the client, not necessarily the recipient. */
+  name?: string | null
+  postTitle: string
+  kindLabel: string
+  statusLabel: string
+  dateLabel?: string | null
+}
+
+const calendarUrl = () => `${appOrigin()}/dashboard/content`
+
+const postDetails = ({
+  postTitle,
+  kindLabel,
+  statusLabel,
+  dateLabel,
+}: Pick<PostMailBase, "postTitle" | "kindLabel" | "statusLabel" | "dateLabel">) => [
+  { label: "Content", value: postTitle },
+  { label: "Type", value: kindLabel },
+  ...(dateLabel ? [{ label: "Planned for", value: dateLabel }] : []),
+  { label: "Status", value: statusLabel },
+]
+
+/** A post has been published to the client for the first time. */
+export async function sendContentPublishedEmail({
+  to,
+  name,
+  postTitle,
+  kindLabel,
+  statusLabel,
+  dateLabel,
+  needsRawUpload,
+}: PostMailBase & { needsRawUpload: boolean }) {
+  const url = calendarUrl()
+
+  const html = renderLayout({
+    preheader: `${postTitle} is on your content calendar.`,
+    heading: "New content on your calendar",
+    body: [
+      greeting(name),
+      `Your team has added <strong>${escapeHtml(postTitle)}</strong> to your content calendar. Open it to read the script and the shoot direction.`,
+      needsRawUpload
+        ? "This one needs footage from you — there's an upload button on the card that drops your files straight into the right Drive folder."
+        : "Anything you'd like changed, leave it as feedback on the post and your team will pick it up.",
+    ],
+    details: postDetails({ postTitle, kindLabel, statusLabel, dateLabel }),
+    buttonLabel: "Open your content calendar",
+    buttonHref: url,
+    footer: CONTENT_FOOTER,
+  })
+
+  const text = asText([
+    `Hi${name ? ` ${name.trim().split(/\s+/)[0]}` : ""},`,
+    "",
+    `Your team has added "${postTitle}" to your content calendar.`,
+    "",
+    `Type: ${kindLabel}`,
+    ...(dateLabel ? [`Planned for: ${dateLabel}`] : []),
+    `Status: ${statusLabel}`,
+    ...(needsRawUpload ? ["", "This one needs raw footage from you."] : []),
+    "",
+    `Open it here: ${url}`,
+  ])
+
+  return sendMail({ to, subject: `New on your calendar: ${postTitle}`, html, text })
+}
+
+/** The status of a post the client can already see has moved. */
+export async function sendContentStatusEmail({
+  to,
+  name,
+  postTitle,
+  kindLabel,
+  statusLabel,
+  dateLabel,
+  previousStatusLabel,
+}: PostMailBase & { previousStatusLabel: string }) {
+  const url = calendarUrl()
+
+  const html = renderLayout({
+    preheader: `${postTitle} is now ${statusLabel.toLowerCase()}.`,
+    heading: "A post on your calendar moved on",
+    body: [
+      greeting(name),
+      `<strong>${escapeHtml(postTitle)}</strong> has moved from <strong>${escapeHtml(previousStatusLabel)}</strong> to <strong>${escapeHtml(statusLabel)}</strong>.`,
+    ],
+    details: postDetails({ postTitle, kindLabel, statusLabel, dateLabel }),
+    buttonLabel: "See the update",
+    buttonHref: url,
+    footer: CONTENT_FOOTER,
+  })
+
+  const text = asText([
+    `Hi${name ? ` ${name.trim().split(/\s+/)[0]}` : ""},`,
+    "",
+    `"${postTitle}" has moved from ${previousStatusLabel} to ${statusLabel}.`,
+    ...(dateLabel ? [`Planned for: ${dateLabel}`] : []),
+    "",
+    `See it here: ${url}`,
+  ])
+
+  return sendMail({ to, subject: `${postTitle} — now ${statusLabel.toLowerCase()}`, html, text })
+}
+
+/** The client has left feedback on a post. Goes to the team, not the client. */
+export async function sendContentFeedbackEmail({
+  to,
+  clientName,
+  postTitle,
+  excerpt,
+  clientId,
+}: {
+  to: string
+  clientName: string
+  postTitle: string
+  excerpt: string
+  clientId: string
+}) {
+  const url = `${appOrigin()}/dashboard/clients/${clientId}/content`
+
+  const html = renderLayout({
+    preheader: `${clientName} left feedback on ${postTitle}.`,
+    heading: `${clientName} left feedback`,
+    body: [
+      `<strong>${escapeHtml(clientName)}</strong> commented on <strong>${escapeHtml(postTitle)}</strong>:`,
+      `<span style="display:block;padding:12px 14px;border-left:3px solid ${BORDER};color:#374151;">${escapeHtml(excerpt)}</span>`,
+    ],
+    buttonLabel: "Open the calendar",
+    buttonHref: url,
+    footer: CONTENT_FOOTER,
+  })
+
+  const text = asText([
+    `${clientName} commented on "${postTitle}":`,
+    "",
+    excerpt,
+    "",
+    `Open it here: ${url}`,
+  ])
+
+  return sendMail({ to, subject: `Feedback from ${clientName}: ${postTitle}`, html, text })
+}
+
+/** Raw footage has landed in Drive. Goes to the team. */
+export async function sendContentUploadEmail({
+  to,
+  clientName,
+  postTitle,
+  fileCount,
+  folderUrl,
+  clientId,
+}: {
+  to: string
+  clientName: string
+  postTitle: string
+  fileCount: number
+  folderUrl: string | null
+  clientId: string
+}) {
+  const url = `${appOrigin()}/dashboard/clients/${clientId}/content`
+  const files = `${fileCount} ${fileCount === 1 ? "file" : "files"}`
+
+  const html = renderLayout({
+    preheader: `${clientName} uploaded ${files} for ${postTitle}.`,
+    heading: "Raw footage uploaded",
+    body: [
+      `<strong>${escapeHtml(clientName)}</strong> uploaded <strong>${escapeHtml(files)}</strong> for <strong>${escapeHtml(postTitle)}</strong>.`,
+      folderUrl
+        ? `It's in Drive now: <a href="${folderUrl}" style="color:#1d4ed8;">open the folder</a>.`
+        : "It's in the shared Drive folder for that post.",
+    ],
+    buttonLabel: "Open the calendar",
+    buttonHref: url,
+    footer: CONTENT_FOOTER,
+  })
+
+  const text = asText([
+    `${clientName} uploaded ${files} for "${postTitle}".`,
+    ...(folderUrl ? ["", `Drive folder: ${folderUrl}`] : []),
+    "",
+    `Open the calendar: ${url}`,
+  ])
+
+  return sendMail({ to, subject: `${clientName} uploaded footage for ${postTitle}`, html, text })
 }

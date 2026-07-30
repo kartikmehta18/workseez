@@ -1,0 +1,282 @@
+"use client"
+
+import * as React from "react"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
+import { Loader2, Plus } from "lucide-react"
+
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  CONTENT_KINDS,
+  CONTENT_KIND_LABELS,
+  CONTENT_STATUSES,
+  CONTENT_STATUS_HINTS,
+  CONTENT_STATUS_LABELS,
+  toContentKind,
+  toContentStatus,
+  VIDEO_KINDS,
+  type ContentKind,
+  type ContentStatus,
+} from "@/lib/content"
+import { ScriptEditor, seedDraft } from "./script-editor"
+import { createPost } from "../actions"
+
+/**
+ * Adds a post to a calendar, script and all.
+ *
+ * The script is written here rather than only in the edit dialog: a strategist
+ * adding a reel already has the hooks and the shoot direction in front of them,
+ * and making them save an empty post first just to reopen it is a step for the
+ * software's benefit, not theirs. Picking the type seeds the right skeleton — a
+ * reel gets shoot direction and hooks, a static post gets a concept and copy —
+ * and every label stays editable here and afterwards.
+ *
+ * "Publish now" is off by default. Writing a post and showing it to the client
+ * are two decisions, and the wrong default puts unfinished direction in front
+ * of them.
+ */
+export function CreatePostDialog({
+  calendarId,
+  defaultDate,
+}: {
+  calendarId: string
+  /** Pre-fills the date field — usually the selected cycle's start. */
+  defaultDate?: string | null
+}) {
+  const [open, setOpen] = React.useState(false)
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button>
+          <Plus /> New post
+        </Button>
+      </DialogTrigger>
+      {/* No max-h override — DialogContent already caps at 100dvh-2rem. A vh cap
+          measures the viewport behind mobile browser chrome, which put the
+          footer buttons under the address bar on a phone. */}
+      <DialogContent className="sm:max-w-3xl">
+        {/* Mounted only while open, so every new post starts from a clean draft
+            instead of whatever the last one was left at. */}
+        {open ? (
+          <NewPostForm
+            calendarId={calendarId}
+            defaultDate={defaultDate}
+            onDone={() => setOpen(false)}
+          />
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function NewPostForm({
+  calendarId,
+  defaultDate,
+  onDone,
+}: {
+  calendarId: string
+  defaultDate?: string | null
+  onDone: () => void
+}) {
+  const router = useRouter()
+  const [pending, startTransition] = React.useTransition()
+  const [kind, setKind] = React.useState<ContentKind>("REEL")
+  const [status, setStatus] = React.useState<ContentStatus>("SCRIPTING")
+
+  const onSubmit = (formData: FormData) => {
+    startTransition(async () => {
+      const result = await createPost(formData)
+      if (result.ok) {
+        toast.success(
+          formData.get("publishNow") === "on"
+            ? "Post created and published. The client has been emailed."
+            : "Post created.",
+        )
+        onDone()
+        router.refresh()
+      } else {
+        toast.error(result.error)
+      }
+    })
+  }
+
+  const isVideo = VIDEO_KINDS.includes(kind)
+
+  return (
+    <form action={onSubmit}>
+      <input type="hidden" name="calendarId" value={calendarId} />
+      <input type="hidden" name="kind" value={kind} />
+      <input type="hidden" name="status" value={status} />
+
+      <DialogHeader>
+        <DialogTitle>New post</DialogTitle>
+        <DialogDescription>
+          Starts with the standard script lines for the type you pick — every label is editable
+          afterwards, and you can add as many more as you need.
+        </DialogDescription>
+      </DialogHeader>
+
+      <div className="grid gap-5 py-5">
+        <div className="grid gap-2">
+          <Label htmlFor="new-post-title">Title</Label>
+          <Input
+            id="new-post-title"
+            name="title"
+            required
+            maxLength={180}
+            placeholder="e.g. Difference between diff tech jobs"
+          />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-2">
+            <Label htmlFor="new-post-kind">Type</Label>
+            <Select value={kind} onValueChange={(value) => setKind(toContentKind(value))}>
+              <SelectTrigger id="new-post-kind">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CONTENT_KINDS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {CONTENT_KIND_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="new-post-status">Status</Label>
+            <Select
+              value={status}
+              onValueChange={(value) => setStatus(toContentStatus(value))}
+            >
+              <SelectTrigger id="new-post-status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CONTENT_STATUSES.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {CONTENT_STATUS_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="new-post-date">Planned date</Label>
+            <Input
+              id="new-post-date"
+              name="scheduledFor"
+              type="date"
+              defaultValue={defaultDate ?? ""}
+            />
+          </div>
+        </div>
+
+        <p className="text-muted-foreground -mt-2 text-xs">
+          {CONTENT_STATUS_HINTS[status]}
+        </p>
+
+        {isVideo ? (
+          <label className="flex items-start gap-2.5 rounded-lg border p-3 text-sm">
+            <input
+              type="checkbox"
+              name="needsRawUpload"
+              className="accent-primary mt-0.5 size-4"
+            />
+            <span>
+              <span className="font-medium">Ask the client for raw footage</span>
+              <span className="text-muted-foreground block text-xs">
+                Puts the upload panel on their card for this post.
+              </span>
+            </span>
+          </label>
+        ) : null}
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-2">
+            <Label htmlFor="new-post-raw">Raw file link</Label>
+            <Input
+              id="new-post-raw"
+              name="rawFileUrl"
+              type="url"
+              placeholder="Optional — add it later"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="new-post-final">Final edit link</Label>
+            <Input
+              id="new-post-final"
+              name="finalEditUrl"
+              type="url"
+              placeholder="Optional — add it later"
+            />
+          </div>
+        </div>
+
+        {/* Seeded from the type above and re-seeded while the script is
+            still blank, so switching Reel → Post swaps the skeleton but
+            never discards anything already written. */}
+        <ScriptEditor
+          idPrefix="New"
+          kind={kind}
+          initialLines={seedDraft("REEL")}
+          reseedOnKindChange
+        />
+
+        <div className="grid gap-2">
+          <Label htmlFor="new-post-caption">Caption</Label>
+          <Textarea
+            id="new-post-caption"
+            name="caption"
+            placeholder="Optional. The caption that goes out with the post."
+            className="min-h-16 resize-y"
+          />
+        </div>
+
+        <label className="flex items-start gap-2.5 rounded-lg border p-3 text-sm">
+          <input type="checkbox" name="publishNow" className="accent-primary mt-0.5 size-4" />
+          <span>
+            <span className="font-medium">Publish to the client straight away</span>
+            <span className="text-muted-foreground block text-xs">
+              They see it on their calendar and get an email. Leave this off if the script still
+              needs work.
+            </span>
+          </span>
+        </label>
+      </div>
+
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onDone}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={pending}>
+          {pending ? <Loader2 className="animate-spin" /> : null}
+          {pending ? "Creating…" : "Create post"}
+        </Button>
+      </DialogFooter>
+    </form>
+  )
+}

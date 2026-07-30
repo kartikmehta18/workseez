@@ -51,6 +51,13 @@ export type Permission =
   // Delete a whole sheet. Held back from managers because it discards the
   // team's written work along with the client's feedback thread.
   | "strategy:delete"
+  // Create, edit and publish content calendar posts — scripts, dates, statuses
+  // and Drive links. Like strategy:manage this is the team's own document, so
+  // there is no narrower "edit the content" grant.
+  | "content:manage"
+  // Delete a post or a whole calendar. Held back from managers for the same
+  // reason as strategy:delete — it discards the client's feedback with it.
+  | "content:delete"
 
 const PERMISSIONS: Record<Role, Permission[]> = {
   SUPER_ADMIN: [
@@ -68,6 +75,8 @@ const PERMISSIONS: Record<Role, Permission[]> = {
     "onboarding:editResponse",
     "strategy:manage",
     "strategy:delete",
+    "content:manage",
+    "content:delete",
   ],
   // Admins run day-to-day operations but cannot change roles — only the
   // Super Admin decides who is an admin, manager or client.
@@ -82,12 +91,14 @@ const PERMISSIONS: Record<Role, Permission[]> = {
     "onboarding:editResponse",
     "strategy:manage",
     "strategy:delete",
+    "content:manage",
+    "content:delete",
   ],
-  // Managers only ever see the clients they are assigned to. onboarding:manage
-  // and strategy:manage are global grants, but every action re-checks
-  // visibility through clientScopeFor, so they only ever reach their own
-  // clients.
-  MANAGER: ["onboarding:manage", "strategy:manage"],
+  // Managers only ever see the clients they are assigned to. onboarding:manage,
+  // strategy:manage and content:manage are global grants, but every action
+  // re-checks visibility through clientScopeFor, so they only ever reach their
+  // own clients.
+  MANAGER: ["onboarding:manage", "strategy:manage", "content:manage"],
   CLIENT: [],
 }
 

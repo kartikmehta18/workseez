@@ -12,6 +12,8 @@ import {
 import { prisma } from "@/lib/db"
 import { requireActor } from "@/lib/auth"
 import { listVisibleClients } from "@/lib/clients"
+import { formatDayMonth } from "@/lib/content"
+import { getOwnCalendarSummary } from "@/lib/content-queries"
 import { formProgress } from "@/lib/onboarding"
 import { getOwnForm } from "@/lib/onboarding-queries"
 import { can, isTeamRole, ROLE_LABELS } from "@/lib/rbac"
@@ -19,6 +21,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { DriveButton, SocialLinkList } from "./clients/_components/client-links"
 import { ClientStatusBadge, InviteStatusBadge } from "./_components/status-badges"
+import { PostStatusBadge, RawUploadBadge } from "./content/_components/content-badges"
 import { FormStatusBadge, ProgressBar } from "./onboarding/_components/onboarding-badges"
 
 export const metadata = { title: "Dashboard — Workseez" }
@@ -34,6 +37,15 @@ export default async function DashboardPage() {
     // getOwnForm hides drafts, so an unpublished form never surfaces here.
     const ownForm = await getOwnForm(actor)
     const ownProgress = ownForm ? formProgress(ownForm) : null
+    // Only posts already published to them, so the card can never spoil work in
+    // progress. Upcoming first, and anything waiting on their footage pulled to
+    // the front — that is the one thing on this page they have to act on.
+    const calendar = await getOwnCalendarSummary(actor)
+    const awaitingFootage = calendar?.posts.filter((post) => post.needsRawUpload) ?? []
+    const upcoming = (calendar?.posts ?? [])
+      .filter((post) => post.status !== "PUBLISHED" && !post.needsRawUpload)
+      .slice(0, 3)
+    const calendarHighlights = [...awaitingFootage, ...upcoming].slice(0, 4)
     return (
       <div className="mx-auto w-full max-w-4xl">
         <div className="flex items-center gap-4">
@@ -117,9 +129,50 @@ export default async function DashboardPage() {
               </Link>
             ) : null}
 
-            <p className="text-muted-foreground mt-6 text-sm">
-              Your content calendar and strategy sheet will appear here as your team sets them up.
-            </p>
+            {calendar && calendar.posts.length > 0 ? (
+              <div className="mt-6 rounded-lg border">
+                <Link
+                  href="/dashboard/content"
+                  className="group hover:bg-muted/40 flex flex-wrap items-center gap-2 rounded-t-lg px-4 py-3 transition-colors"
+                >
+                  <CalendarDays className="text-muted-foreground size-4 shrink-0" />
+                  <p className="group-hover:text-primary text-sm font-medium transition-colors">
+                    {calendar.title}
+                  </p>
+                  <span className="text-muted-foreground text-xs">
+                    {calendar.posts.length} {calendar.posts.length === 1 ? "post" : "posts"}
+                  </span>
+                  <ArrowRight className="text-muted-foreground ml-auto size-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+                </Link>
+
+                {awaitingFootage.length > 0 ? (
+                  <p className="border-t border-rose-200 bg-rose-50 px-4 py-2.5 text-xs text-rose-800">
+                    <span className="font-semibold">
+                      {awaitingFootage.length}{" "}
+                      {awaitingFootage.length === 1 ? "post needs" : "posts need"} your footage.
+                    </span>{" "}
+                    Open the calendar to upload it.
+                  </p>
+                ) : null}
+
+                <ul className="divide-y border-t">
+                  {calendarHighlights.map((post) => (
+                    <li key={post.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5">
+                      <span className="min-w-0 flex-1 truncate text-sm">{post.title}</span>
+                      {post.needsRawUpload ? <RawUploadBadge /> : null}
+                      <PostStatusBadge status={post.status} />
+                      <span className="text-muted-foreground w-14 shrink-0 text-right text-xs">
+                        {post.scheduledFor ? formatDayMonth(post.scheduledFor) : "—"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="text-muted-foreground mt-6 text-sm">
+                Your content calendar and strategy sheet will appear here as your team sets them up.
+              </p>
+            )}
           </section>
         ) : (
           <div className="mt-8 rounded-lg border border-dashed p-12 text-center">
@@ -263,14 +316,21 @@ export default async function DashboardPage() {
         )}
       </section>
 
-      <section className="mt-8 rounded-lg border border-dashed p-5">
-        <h2 className="flex items-center gap-2 font-medium">
-          <CalendarDays className="size-4" /> Content Calendar
-        </h2>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Post scheduling, scripts and status tracking land here next.
-        </p>
-      </section>
+      <Link
+        href="/dashboard/content"
+        className="group hover:border-primary/40 mt-8 flex items-center gap-3 rounded-lg border p-5 transition-all hover:shadow-sm"
+      >
+        <CalendarDays className="text-muted-foreground size-5 shrink-0" />
+        <div className="min-w-0">
+          <h2 className="group-hover:text-primary font-medium transition-colors">
+            Content Calendar
+          </h2>
+          <p className="text-muted-foreground mt-0.5 text-sm">
+            Plan each cycle, write the scripts, publish to the client and collect their feedback.
+          </p>
+        </div>
+        <ArrowRight className="text-muted-foreground ml-auto size-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+      </Link>
     </div>
   )
 }
