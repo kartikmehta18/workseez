@@ -5,7 +5,13 @@ import { CalendarDays, ChevronDown, ExternalLink, FileText, FolderOpen, Video } 
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { VIDEO_KINDS, type PostView } from "@/lib/content"
-import { PostKindBadge, PostStatusBadge, RawUploadBadge, SharedBadge } from "./content-badges"
+import {
+  PostKindBadge,
+  PostPlatformBadge,
+  PostStatusBadge,
+  RawUploadBadge,
+  SharedBadge,
+} from "./content-badges"
 import { PostControls } from "./post-controls"
 import { PostEditor } from "./post-editor"
 import { PostFeedback } from "./post-feedback"
@@ -96,6 +102,9 @@ export function PostCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <PostStatusBadge status={post.status} />
+            {/* Shown to both sides, unlike the kind badge — which channel a post
+                goes out on is the client's own question, not working detail. */}
+            <PostPlatformBadge platform={post.platform} />
             {post.needsRawUpload ? <RawUploadBadge /> : null}
             {canManage ? (
               <>

@@ -41,6 +41,21 @@ export const CONTENT_KIND_PLURALS: Record<ContentKind, string> = {
 /** Which kinds are shot on camera — the ones a raw-footage upload makes sense for. */
 export const VIDEO_KINDS: ContentKind[] = ["REEL", "STORY", "YOUTUBE"]
 
+/**
+ * Where the post goes out. Separate from `kind`: a reel is a reel whether it
+ * lands on Instagram or YouTube, and the client filters their calendar by
+ * channel ("show me the LinkedIn ones") far more often than by format.
+ */
+export const CONTENT_PLATFORMS = ["INSTAGRAM", "LINKEDIN", "YOUTUBE", "TWITTER"] as const
+export type ContentPlatform = (typeof CONTENT_PLATFORMS)[number]
+
+export const CONTENT_PLATFORM_LABELS: Record<ContentPlatform, string> = {
+  INSTAGRAM: "Instagram",
+  LINKEDIN: "LinkedIn",
+  YOUTUBE: "YouTube",
+  TWITTER: "X (Twitter)",
+}
+
 export const CONTENT_STATUSES = [
   "SCRIPTING",
   "SHOOT_PENDING",
@@ -86,6 +101,10 @@ export function isContentKind(value: string): value is ContentKind {
   return (CONTENT_KINDS as readonly string[]).includes(value)
 }
 
+export function isContentPlatform(value: string): value is ContentPlatform {
+  return (CONTENT_PLATFORMS as readonly string[]).includes(value)
+}
+
 export function isContentStatus(value: string): value is ContentStatus {
   return (CONTENT_STATUSES as readonly string[]).includes(value)
 }
@@ -96,6 +115,10 @@ export function isAssetKind(value: string): value is AssetKind {
 
 export function toContentKind(value: string | null | undefined): ContentKind {
   return value && isContentKind(value) ? value : "REEL"
+}
+
+export function toContentPlatform(value: string | null | undefined): ContentPlatform {
+  return value && isContentPlatform(value) ? value : "INSTAGRAM"
 }
 
 export function toContentStatus(value: string | null | undefined): ContentStatus {
@@ -370,6 +393,7 @@ type LoadedPost = {
   id: string
   title: string
   kind: string
+  platform: string
   status: string
   scheduledFor: Date | null
   sharedAt: Date | null
@@ -397,6 +421,7 @@ export type PostView = {
   id: string
   title: string
   kind: ContentKind
+  platform: ContentPlatform
   status: ContentStatus
   /** ISO yyyy-mm-dd, so the browser can filter and group without re-parsing. */
   scheduledDate: string | null
@@ -441,6 +466,7 @@ export function toPostView(post: LoadedPost, actor: Actor): PostView {
     id: post.id,
     title: post.title,
     kind: toContentKind(post.kind),
+    platform: toContentPlatform(post.platform),
     status: toContentStatus(post.status),
     scheduledDate: toDateInputValue(post.scheduledFor) || null,
     scheduledLabel: post.scheduledFor ? formatDayMonth(post.scheduledFor) : null,

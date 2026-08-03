@@ -17,6 +17,7 @@ import {
   DEFAULT_CYCLE_LENGTH,
   formatDayMonth,
   isContentKind,
+  isContentPlatform,
   isContentStatus,
   MAX_COMMENT_LENGTH,
   MAX_SCRIPT_LINES,
@@ -25,6 +26,7 @@ import {
   toContentKind,
   toContentStatus,
   type ContentKind,
+  type ContentPlatform,
   type ContentStatus,
 } from "@/lib/content"
 
@@ -288,6 +290,7 @@ function parseScriptLines(formData: FormData): ParsedLine[] | { error: string } 
 type PostFields = {
   title: string
   kind: ContentKind
+  platform: ContentPlatform
   status: ContentStatus
   scheduledFor: Date | null
   needsRawUpload: boolean
@@ -307,6 +310,9 @@ function parsePostFields(formData: FormData): PostFields | { error: string } {
   const kind = String(formData.get("kind") ?? "REEL")
   if (!isContentKind(kind)) return { error: "Pick a content type." }
 
+  const platform = String(formData.get("platform") ?? "INSTAGRAM")
+  if (!isContentPlatform(platform)) return { error: "Pick a platform." }
+
   const status = String(formData.get("status") ?? "SCRIPTING")
   if (!isContentStatus(status)) return { error: "Pick a status." }
 
@@ -315,6 +321,7 @@ function parsePostFields(formData: FormData): PostFields | { error: string } {
   return {
     title,
     kind,
+    platform,
     status,
     scheduledFor: parseDateInput(String(formData.get("scheduledFor") ?? "")),
     needsRawUpload: formData.get("needsRawUpload") === "on",
@@ -366,6 +373,7 @@ export async function createPost(formData: FormData): Promise<ActionResult> {
       createdBy: { connect: { id: actor.id } },
       title: fields.title,
       kind: fields.kind,
+      platform: fields.platform,
       status: fields.status,
       scheduledFor: fields.scheduledFor,
       needsRawUpload: fields.needsRawUpload,
@@ -406,9 +414,9 @@ export async function createPost(formData: FormData): Promise<ActionResult> {
 /**
  * Saves everything on a post, script included.
  *
- * The client is emailed only when the status actually changed on a post they
- * can already see — saving a typo in the caption is not news, and a post they
- * cannot see has nothing to report.
+ * The client is emailed only when a post they can already see reaches
+ * Published — the steps in between are the team's working state, not news, and
+ * a post they cannot see has nothing to report.
  */
 export async function savePost(formData: FormData): Promise<ActionResult> {
   const guard = await actorWith("content:manage", "You don't have permission to edit posts.")
@@ -445,6 +453,7 @@ export async function savePost(formData: FormData): Promise<ActionResult> {
       data: {
         title: fields.title,
         kind: fields.kind,
+        platform: fields.platform,
         status: fields.status,
         scheduledFor: fields.scheduledFor,
         needsRawUpload: fields.needsRawUpload,
@@ -458,7 +467,7 @@ export async function savePost(formData: FormData): Promise<ActionResult> {
     }),
   ])
 
-  if (existing.sharedAt && fields.status !== existing.status) {
+  if (existing.sharedAt && fields.status === "PUBLISHED" && existing.status !== "PUBLISHED") {
     await notifyClientStatus(
       existing.calendar.clientId,
       { ...fields, scheduledFor: fields.scheduledFor },
@@ -470,7 +479,10 @@ export async function savePost(formData: FormData): Promise<ActionResult> {
   return { ok: true }
 }
 
-/** The one-click status change on a card, without opening the full editor. */
+/**
+ * The one-click status change on a card, without opening the full editor.
+ * Only the move to Published is worth a mail — see savePost.
+ */
 export async function setPostStatus(formData: FormData): Promise<ActionResult> {
   const guard = await actorWith("content:manage", "You don't have permission to edit posts.")
   if (!guard.ok) return fail(guard.error)
@@ -494,7 +506,9 @@ export async function setPostStatus(formData: FormData): Promise<ActionResult> {
     select: { title: true, kind: true, status: true, scheduledFor: true, needsRawUpload: true },
   })
 
-  if (post.sharedAt) await notifyClientStatus(post.calendar.clientId, updated, post.status)
+  if (post.sharedAt && status === "PUBLISHED") {
+    await notifyClientStatus(post.calendar.clientId, updated, post.status)
+  }
 
   revalidateCalendar(post.calendar.clientId)
   return { ok: true }

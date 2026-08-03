@@ -332,6 +332,9 @@ model ContentPost {
   title      String
   // REEL | POST | CAROUSEL | STORY | YOUTUBE — see CONTENT_KINDS in lib/content.ts.
   kind       String @default("REEL")
+  // INSTAGRAM | LINKEDIN | YOUTUBE | TWITTER — the channel it goes out on, a
+  // separate axis from `kind`: the same reel can be an Instagram or a YouTube one.
+  platform   String @default("INSTAGRAM")
   // SCRIPTING | SHOOT_PENDING | IN_PRODUCTION | SCHEDULED | PUBLISHED
   status     String @default("SCRIPTING")
 

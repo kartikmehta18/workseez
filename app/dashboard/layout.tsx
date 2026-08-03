@@ -5,6 +5,7 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/s
 import { Separator } from "@/components/ui/separator"
 import { Toaster } from "@/components/ui/sonner"
 import { DashboardSidebar } from "./_components/dashboard-sidebar"
+import { PageTransition } from "./_components/page-transition"
 import { UserMenu } from "./_components/user-menu"
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -34,7 +35,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </div>
         </header>
         {/* Tighter gutters on phones — 24px each side eats a lot of a 360px viewport. */}
-        <div className="min-w-0 flex-1 p-4 sm:p-6">{children}</div>
+        <div className="min-w-0 flex-1 p-4 sm:p-6">
+          {/* Wraps only the page, so a slow route swaps to a skeleton here
+              while the sidebar and header above stay live and clickable. */}
+          <PageTransition>{children}</PageTransition>
+        </div>
         <Toaster />
       </SidebarInset>
     </SidebarProvider>
