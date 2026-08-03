@@ -28,13 +28,17 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   CONTENT_KINDS,
   CONTENT_KIND_LABELS,
+  CONTENT_PLATFORMS,
+  CONTENT_PLATFORM_LABELS,
   CONTENT_STATUSES,
   CONTENT_STATUS_HINTS,
   CONTENT_STATUS_LABELS,
   toContentKind,
+  toContentPlatform,
   toContentStatus,
   VIDEO_KINDS,
   type ContentKind,
+  type ContentPlatform,
   type ContentStatus,
 } from "@/lib/content"
 import { ScriptEditor, seedDraft } from "./script-editor"
@@ -101,6 +105,7 @@ function NewPostForm({
   const router = useRouter()
   const [pending, startTransition] = React.useTransition()
   const [kind, setKind] = React.useState<ContentKind>("REEL")
+  const [platform, setPlatform] = React.useState<ContentPlatform>("INSTAGRAM")
   const [status, setStatus] = React.useState<ContentStatus>("SCRIPTING")
 
   const onSubmit = (formData: FormData) => {
@@ -126,6 +131,7 @@ function NewPostForm({
     <form action={onSubmit}>
       <input type="hidden" name="calendarId" value={calendarId} />
       <input type="hidden" name="kind" value={kind} />
+      <input type="hidden" name="platform" value={platform} />
       <input type="hidden" name="status" value={status} />
 
       <DialogHeader>
@@ -148,7 +154,7 @@ function NewPostForm({
           />
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="grid gap-2">
             <Label htmlFor="new-post-kind">Type</Label>
             <Select value={kind} onValueChange={(value) => setKind(toContentKind(value))}>
@@ -159,6 +165,25 @@ function NewPostForm({
                 {CONTENT_KINDS.map((option) => (
                   <SelectItem key={option} value={option}>
                     {CONTENT_KIND_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="new-post-platform">Platform</Label>
+            <Select
+              value={platform}
+              onValueChange={(value) => setPlatform(toContentPlatform(value))}
+            >
+              <SelectTrigger id="new-post-platform">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CONTENT_PLATFORMS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {CONTENT_PLATFORM_LABELS[option]}
                   </SelectItem>
                 ))}
               </SelectContent>

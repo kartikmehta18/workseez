@@ -9,12 +9,15 @@ import { cn } from "@/lib/utils"
 import {
   CONTENT_KINDS,
   CONTENT_KIND_LABELS,
+  CONTENT_PLATFORMS,
+  CONTENT_PLATFORM_LABELS,
   CONTENT_STATUSES,
   CONTENT_STATUS_LABELS,
   type CycleOption,
   type PostView,
 } from "@/lib/content"
 import { CalendarGrid } from "./calendar-grid"
+import { PlatformDot } from "./content-badges"
 import { PostCard } from "./post-card"
 
 type View = "list" | "calendar"
@@ -54,6 +57,7 @@ export function PostList({
   const [query, setQuery] = React.useState("")
   const [status, setStatus] = React.useState("ALL")
   const [kind, setKind] = React.useState("ALL")
+  const [platform, setPlatform] = React.useState("ALL")
   const [cycle, setCycle] = React.useState(() => (initialCycle ? String(initialCycle) : "ALL"))
   const [from, setFrom] = React.useState("")
   const [to, setTo] = React.useState("")
@@ -62,7 +66,12 @@ export function PostList({
 
   const selectedCycle = cycles.find((option) => String(option.number) === cycle) ?? null
 
-  const filtered = React.useMemo(() => {
+  /**
+   * Everything except the platform tabs. Kept separate so the tabs can be built
+   * from it: a tab's count is what tapping it would actually show, and a channel
+   * with nothing left after the other filters gets no tab at all.
+   */
+  const beforePlatform = React.useMemo(() => {
     const needle = query.trim().toLowerCase()
 
     return posts.filter((post) => {
@@ -98,6 +107,33 @@ export function PostList({
     })
   }, [posts, query, status, kind, selectedCycle, from, to])
 
+  const filtered = React.useMemo(
+    () =>
+      platform === "ALL"
+        ? beforePlatform
+        : beforePlatform.filter((post) => post.platform === platform),
+    [beforePlatform, platform],
+  )
+
+  /**
+   * One tab per channel that has something to show, plus whichever is selected —
+   * a tab that vanishes under your finger takes the empty state's "clear
+   * filters" escape hatch with it.
+   */
+  const platformTabs = React.useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const post of beforePlatform) {
+      counts.set(post.platform, (counts.get(post.platform) ?? 0) + 1)
+    }
+    return CONTENT_PLATFORMS.filter(
+      (option) => counts.has(option) || option === platform,
+    ).map((option) => ({
+      value: option as string,
+      label: CONTENT_PLATFORM_LABELS[option],
+      count: counts.get(option) ?? 0,
+    }))
+  }, [beforePlatform, platform])
+
   const toggle = (postId: string) =>
     setOpenIds((current) => {
       const next = new Set(current)
@@ -117,12 +153,19 @@ export function PostList({
   }
 
   const filtersActive =
-    query !== "" || status !== "ALL" || kind !== "ALL" || cycle !== "ALL" || from !== "" || to !== ""
+    query !== "" ||
+    status !== "ALL" ||
+    kind !== "ALL" ||
+    platform !== "ALL" ||
+    cycle !== "ALL" ||
+    from !== "" ||
+    to !== ""
 
   const clearFilters = () => {
     setQuery("")
     setStatus("ALL")
     setKind("ALL")
+    setPlatform("ALL")
     setCycle("ALL")
     setFrom("")
     setTo("")
@@ -278,6 +321,43 @@ export function PostList({
           ) : null}
         </div>
       </div>
+
+      {/* Platform tabs. Outside the toolbar and above both views: picking a
+          channel is the coarsest cut anyone makes here, so it stays one tap
+          away rather than living behind the Filters panel. Horizontally
+          scrollable because four channels plus All overflow a phone. */}
+      {platformTabs.length > 1 ? (
+        <div
+          role="tablist"
+          aria-label="Filter by platform"
+          className="-mx-1 flex items-center gap-1 overflow-x-auto px-1 pb-1"
+        >
+          {[{ value: "ALL", label: "All", count: beforePlatform.length }, ...platformTabs].map(
+            (tab) => {
+              const active = platform === tab.value
+              return (
+                <button
+                  key={tab.value}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setPlatform(tab.value)}
+                  className={cn(
+                    "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                    active
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "bg-card text-muted-foreground hover:bg-muted",
+                  )}
+                >
+                  {tab.value === "ALL" ? null : <PlatformDot platform={tab.value} />}
+                  {tab.label}
+                  <span className="tabular-nums opacity-70">{tab.count}</span>
+                </button>
+              )
+            },
+          )}
+        </div>
+      ) : null}
 
       {view === "calendar" ? (
         <CalendarGrid

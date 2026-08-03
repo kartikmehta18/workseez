@@ -28,12 +28,16 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   CONTENT_KINDS,
   CONTENT_KIND_LABELS,
+  CONTENT_PLATFORMS,
+  CONTENT_PLATFORM_LABELS,
   CONTENT_STATUSES,
   CONTENT_STATUS_HINTS,
   CONTENT_STATUS_LABELS,
   toContentKind,
+  toContentPlatform,
   toContentStatus,
   type ContentKind,
+  type ContentPlatform,
   type PostView,
 } from "@/lib/content"
 import { ScriptEditor, toDraft } from "./script-editor"
@@ -76,6 +80,7 @@ function PostForm({ post, onDone }: { post: PostView; onDone: () => void }) {
   const [pending, startTransition] = React.useTransition()
 
   const [kind, setKind] = React.useState<ContentKind>(post.kind)
+  const [platform, setPlatform] = React.useState<ContentPlatform>(post.platform)
   const [status, setStatus] = React.useState(post.status)
 
   const onSubmit = (formData: FormData) => {
@@ -95,6 +100,7 @@ function PostForm({ post, onDone }: { post: PostView; onDone: () => void }) {
     <form action={onSubmit}>
       <input type="hidden" name="postId" value={post.id} />
       <input type="hidden" name="kind" value={kind} />
+      <input type="hidden" name="platform" value={platform} />
       <input type="hidden" name="status" value={status} />
 
       <DialogHeader>
@@ -117,7 +123,7 @@ function PostForm({ post, onDone }: { post: PostView; onDone: () => void }) {
           />
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="grid gap-2">
             <Label htmlFor={`kind-${post.id}`}>Type</Label>
             <Select value={kind} onValueChange={(value) => setKind(toContentKind(value))}>
@@ -128,6 +134,25 @@ function PostForm({ post, onDone }: { post: PostView; onDone: () => void }) {
                 {CONTENT_KINDS.map((option) => (
                   <SelectItem key={option} value={option}>
                     {CONTENT_KIND_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor={`platform-${post.id}`}>Platform</Label>
+            <Select
+              value={platform}
+              onValueChange={(value) => setPlatform(toContentPlatform(value))}
+            >
+              <SelectTrigger id={`platform-${post.id}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CONTENT_PLATFORMS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {CONTENT_PLATFORM_LABELS[option]}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -162,8 +187,8 @@ function PostForm({ post, onDone }: { post: PostView; onDone: () => void }) {
         </div>
 
         <p className="text-muted-foreground -mt-2 text-xs">
-          {CONTENT_STATUS_HINTS[status]} Changing the status emails the client, as long as the
-          post is already published to them.
+          {CONTENT_STATUS_HINTS[status]} Only moving to Published emails the client, and only if
+          the post is already published to them.
         </p>
 
         <label className="flex items-start gap-2.5 rounded-lg border p-3 text-sm">

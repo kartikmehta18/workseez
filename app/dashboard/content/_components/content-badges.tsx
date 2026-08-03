@@ -4,9 +4,12 @@ import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import {
   CONTENT_KIND_LABELS,
+  CONTENT_PLATFORM_LABELS,
   CONTENT_STATUS_LABELS,
   toContentKind,
+  toContentPlatform,
   toContentStatus,
+  type ContentPlatform,
   type ContentStatus,
 } from "@/lib/content"
 
@@ -52,6 +55,54 @@ export function PostStatusBadge({
       )}
     >
       {CONTENT_STATUS_LABELS[resolved]}
+    </Badge>
+  )
+}
+
+/**
+ * Which channel the post goes out on.
+ *
+ * Each platform's own brand colour rather than the status scale: this badge
+ * answers a different question from the rest of the row, and a client scanning
+ * for "the LinkedIn ones" finds them by colour before they read the word.
+ * lucide-react dropped its brand icons, so the mark is a dot, not a logo.
+ */
+const PLATFORM_STYLES: Record<ContentPlatform, { badge: string; dot: string }> = {
+  INSTAGRAM: { badge: "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700", dot: "bg-fuchsia-500" },
+  LINKEDIN: { badge: "border-blue-200 bg-blue-50 text-blue-700", dot: "bg-blue-600" },
+  YOUTUBE: { badge: "border-red-200 bg-red-50 text-red-700", dot: "bg-red-600" },
+  TWITTER: { badge: "border-slate-300 bg-slate-100 text-slate-800", dot: "bg-slate-900" },
+}
+
+/** The coloured dot on its own, for the platform tabs. */
+export function PlatformDot({ platform, className }: { platform: string; className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "size-2 shrink-0 rounded-full",
+        PLATFORM_STYLES[toContentPlatform(platform)].dot,
+        className,
+      )}
+    />
+  )
+}
+
+export function PostPlatformBadge({
+  platform,
+  className,
+}: {
+  platform: string
+  className?: string
+}) {
+  const resolved = toContentPlatform(platform)
+  return (
+    <Badge
+      variant="secondary"
+      className={cn("gap-1.5 font-medium", PLATFORM_STYLES[resolved].badge, className)}
+    >
+      <PlatformDot platform={resolved} />
+      {CONTENT_PLATFORM_LABELS[resolved]}
     </Badge>
   )
 }

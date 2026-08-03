@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
+import { RouteProgress } from "@/components/route-progress";
 import "./globals.css";
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,7 +30,16 @@ export default function RootLayout({ children }) {
     >
       {/* The marketing Navbar is rendered per-page, not here — the dashboard
           has its own sidebar shell and must not inherit the public header. */}
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {/* Mounted here so one listener covers the marketing site, login and
+            the dashboard alike. Suspense because RouteProgress reads
+            useSearchParams, which would otherwise opt the whole tree out of
+            static rendering; it renders nothing until a navigation starts. */}
+        <Suspense fallback={null}>
+          <RouteProgress />
+        </Suspense>
+        {children}
+      </body>
     </html>
   );
 }

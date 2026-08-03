@@ -55,6 +55,14 @@
   --animate-spin-around: spin-around calc(var(--speed) * 2) infinite linear;
   --animate-shine: shine var(--duration) infinite linear;
   --animate-border-beam: border-beam calc(var(--duration) * 1s) infinite linear;
+  /* Loading skeletons: a highlight sweeping left to right, rather than the
+     whole block dimming in and out. Reads as "content on its way" instead of
+     "something is blinking". */
+  --animate-skeleton: skeleton-sweep 1.6s ease-in-out infinite;
+  /* The navigation bar climbs quickly to 90% then crawls, because the real
+     duration is unknown — it must never look finished before the page is. */
+  --animate-nav-progress: nav-progress 6s cubic-bezier(0.1, 0.6, 0.3, 1)
+    forwards;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-serif: var(--font-serif);
@@ -109,6 +117,12 @@
   --sidebar-ring: hsl(220 73% 9%);
   --muted-2: hsl(0 0% 90%);
   --muted-2-foreground: hsl(240 3.8% 46.1%);
+  /* Skeleton base and the highlight that sweeps across it. Declared per theme
+     rather than derived from --background, which is lighter than --muted in
+     light mode but darker in dark mode — deriving it would invert the sweep
+     into a dark smear on dark screens. */
+  --skeleton: hsl(0 0% 93%);
+  --skeleton-highlight: hsl(0 0% 99%);
   --gradient-1: hsl(227 81% 67%);
   --gradient-2: hsl(125 51% 53%);
   --gradient-3: hsl(318 58% 66%);
@@ -151,6 +165,8 @@
   --sidebar-ring: hsl(217.2 91.2% 59.8%);
   --muted-2: hsl(0, 0%, 18%);
   --muted-2-foreground: hsl(240, 2%, 75%);
+  --skeleton: hsl(240 3.7% 15.9%);
+  --skeleton-highlight: hsl(240 3.7% 24%);
   --gradient-1: hsl(240 77% 25%);
   --gradient-2: hsl(125 51% 53%);
   --gradient-3: hsl(318 58% 66%);
@@ -368,5 +384,46 @@ body {
   }
   to {
     background-position: 0% 0%;
+  }
+}
+
+/* The skeleton highlight. Travels across a 200%-wide gradient, so the sweep
+   crosses the block and leaves before restarting rather than snapping back. */
+@keyframes skeleton-sweep {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Navigation progress. Fast to 60%, then asymptotic — a route that takes four
+   seconds still has somewhere to go, and the bar is completed by the component
+   the moment the new page commits. */
+@keyframes nav-progress {
+  0% {
+    transform: scaleX(0.02);
+  }
+  25% {
+    transform: scaleX(0.4);
+  }
+  50% {
+    transform: scaleX(0.62);
+  }
+  75% {
+    transform: scaleX(0.78);
+  }
+  100% {
+    transform: scaleX(0.9);
+  }
+}
+
+/* Both loaders are pure decoration; anyone who asked for less motion gets the
+   layout without the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-skeleton,
+  .animate-nav-progress {
+    animation: none;
   }
 }
