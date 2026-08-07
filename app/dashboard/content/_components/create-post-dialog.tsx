@@ -30,9 +30,9 @@ import {
   CONTENT_KIND_LABELS,
   CONTENT_PLATFORMS,
   CONTENT_PLATFORM_LABELS,
-  CONTENT_STATUSES,
   CONTENT_STATUS_HINTS,
   CONTENT_STATUS_LABELS,
+  statusesForKind,
   toContentKind,
   toContentPlatform,
   toContentStatus,
@@ -126,6 +126,18 @@ function NewPostForm({
   }
 
   const isVideo = VIDEO_KINDS.includes(kind)
+  const statuses = statusesForKind(kind, status)
+
+  /**
+   * Switching Reel → Post takes the camera statuses away with it, so a status
+   * the new type cannot be in drops back to Scripting rather than leaving the
+   * select showing a value that is no longer on offer.
+   */
+  const changeKind = (value: string) => {
+    const next = toContentKind(value)
+    setKind(next)
+    if (!statusesForKind(next).includes(status)) setStatus("SCRIPTING")
+  }
 
   return (
     <form action={onSubmit}>
@@ -157,7 +169,7 @@ function NewPostForm({
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="grid gap-2">
             <Label htmlFor="new-post-kind">Type</Label>
-            <Select value={kind} onValueChange={(value) => setKind(toContentKind(value))}>
+            <Select value={kind} onValueChange={changeKind}>
               <SelectTrigger id="new-post-kind">
                 <SelectValue />
               </SelectTrigger>
@@ -199,8 +211,10 @@ function NewPostForm({
               <SelectTrigger id="new-post-status">
                 <SelectValue />
               </SelectTrigger>
+              {/* Only the statuses this type can be in — a carousel is never
+                  waiting on a shoot or sitting with an editor. */}
               <SelectContent>
-                {CONTENT_STATUSES.map((option) => (
+                {statuses.map((option) => (
                   <SelectItem key={option} value={option}>
                     {CONTENT_STATUS_LABELS[option]}
                   </SelectItem>

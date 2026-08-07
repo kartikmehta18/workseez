@@ -73,6 +73,29 @@ export const CONTENT_STATUS_LABELS: Record<ContentStatus, string> = {
   PUBLISHED: "Published",
 }
 
+/**
+ * The three states that only exist because something was filmed. A carousel is
+ * written and then it goes out; it is never waiting on footage, never with an
+ * editor, and never sitting in a queue behind an approved cut. Offering these
+ * on a static post only invites a calendar that misreports where the work is.
+ */
+const CAMERA_STATUSES: ContentStatus[] = ["SHOOT_PENDING", "IN_PRODUCTION", "SCHEDULED"]
+
+/**
+ * Which statuses a given type can be in — the full set for anything shot on
+ * camera, Scripting and Published for the rest.
+ *
+ * `current` is always kept, whatever the type. A post that was a reel in
+ * production and has just been switched to a carousel still has to render its
+ * own value, or the select goes blank and the next save silently rewrites it.
+ */
+export function statusesForKind(kind: ContentKind, current?: ContentStatus): ContentStatus[] {
+  if (VIDEO_KINDS.includes(kind)) return [...CONTENT_STATUSES]
+  return CONTENT_STATUSES.filter(
+    (status) => !CAMERA_STATUSES.includes(status) || status === current,
+  )
+}
+
 /** One line of explanation per status, shown wherever the status is chosen. */
 export const CONTENT_STATUS_HINTS: Record<ContentStatus, string> = {
   SCRIPTING: "The script is still being written.",

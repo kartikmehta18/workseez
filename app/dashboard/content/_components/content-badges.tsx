@@ -1,3 +1,4 @@
+import { SiInstagram, SiX, SiYoutube } from "@icons-pack/react-simple-icons"
 import { Clapperboard, Upload } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -74,7 +75,7 @@ const PLATFORM_STYLES: Record<ContentPlatform, { badge: string; dot: string }> =
   TWITTER: { badge: "border-slate-300 bg-slate-100 text-slate-800", dot: "bg-slate-900" },
 }
 
-/** The coloured dot on its own, for the platform tabs. */
+/** The coloured dot on its own, for the platform badge. */
 export function PlatformDot({ platform, className }: { platform: string; className?: string }) {
   return (
     <span
@@ -86,6 +87,40 @@ export function PlatformDot({ platform, className }: { platform: string; classNa
       )}
     />
   )
+}
+
+/**
+ * LinkedIn's mark, hand-drawn because Simple Icons had to drop it from the set
+ * — see the note in components/ui/social-icon.tsx. That file falls back to a
+ * globe; the platform tabs cannot, because a globe sitting between three brand
+ * logos reads as "some other channel" rather than "LinkedIn".
+ */
+function LinkedInMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden className={className}>
+      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.852 3.37-1.852 3.601 0 4.267 2.37 4.267 5.455v6.288zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451c.978 0 1.778-.773 1.778-1.729V1.729C24 .774 23.2 0 22.225 0z" />
+    </svg>
+  )
+}
+
+const PLATFORM_MARKS: Record<
+  ContentPlatform,
+  { Icon: React.ComponentType<{ className?: string }>; color: string }
+> = {
+  INSTAGRAM: { Icon: SiInstagram, color: "text-fuchsia-500" },
+  LINKEDIN: { Icon: LinkedInMark, color: "text-blue-600" },
+  YOUTUBE: { Icon: SiYoutube, color: "text-red-600" },
+  // X's mark is black-on-white by brand, so it follows the text colour rather
+  // than pinning a slate that would vanish on a dark background.
+  TWITTER: { Icon: SiX, color: "text-foreground" },
+}
+
+/** The channel's brand mark, in its own colour — for the platform tabs. */
+export function PlatformIcon({ platform, className }: { platform: string; className?: string }) {
+  // Picked from a module-scope map, so the element type is stable across
+  // renders and React never remounts the icon.
+  const { Icon, color } = PLATFORM_MARKS[toContentPlatform(platform)]
+  return <Icon className={cn("size-3.5 shrink-0", color, className)} />
 }
 
 export function PostPlatformBadge({

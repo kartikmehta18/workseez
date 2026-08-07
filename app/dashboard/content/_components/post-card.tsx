@@ -151,6 +151,7 @@ export function PostCard({
             <div className="flex flex-wrap items-center gap-2">
               <PostControls
                 postId={post.id}
+                kind={post.kind}
                 status={post.status}
                 shared={post.shared}
                 canDelete={canDelete}
