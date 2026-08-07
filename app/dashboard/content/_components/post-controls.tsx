@@ -14,8 +14,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  CONTENT_STATUSES,
   CONTENT_STATUS_LABELS,
+  statusesForKind,
+  type ContentKind,
   type ContentStatus,
 } from "@/lib/content"
 import { deletePost, setPostShared, setPostStatus } from "../actions"
@@ -30,11 +31,13 @@ import { deletePost, setPostShared, setPostStatus } from "../actions"
  */
 export function PostControls({
   postId,
+  kind,
   status,
   shared,
   canDelete,
 }: {
   postId: string
+  kind: ContentKind
   status: ContentStatus
   shared: boolean
   canDelete: boolean
@@ -107,8 +110,11 @@ export function PostControls({
         <SelectTrigger className="h-9 w-44" aria-label="Post status">
           <SelectValue />
         </SelectTrigger>
+        {/* Only the statuses this type can be in — a carousel is never waiting
+            on a shoot or sitting with an editor. The post's own status stays
+            listed either way, so an older one still shows what it is. */}
         <SelectContent>
-          {CONTENT_STATUSES.map((option) => (
+          {statusesForKind(kind, status).map((option) => (
             <SelectItem key={option} value={option}>
               {CONTENT_STATUS_LABELS[option]}
             </SelectItem>

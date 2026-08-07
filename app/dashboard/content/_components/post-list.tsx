@@ -17,7 +17,7 @@ import {
   type PostView,
 } from "@/lib/content"
 import { CalendarGrid } from "./calendar-grid"
-import { PlatformDot } from "./content-badges"
+import { PlatformIcon } from "./content-badges"
 import { PostCard } from "./post-card"
 
 type View = "list" | "calendar"
@@ -116,22 +116,30 @@ export function PostList({
   )
 
   /**
-   * One tab per channel that has something to show, plus whichever is selected —
-   * a tab that vanishes under your finger takes the empty state's "clear
-   * filters" escape hatch with it.
+   * A tab per channel that has something to show — a count of zero means the
+   * tab leads nowhere, so it is not drawn at all. The one exception is whatever
+   * is currently selected: a tab that vanishes under your finger takes the only
+   * way back to "All" with it.
+   *
+   * Counts come from beforePlatform, so they answer "what would tapping this
+   * show" under the filters already set, and the strip stays down to a single
+   * channel — one Instagram post and nothing else still gets All + Instagram.
    */
   const platformTabs = React.useMemo(() => {
     const counts = new Map<string, number>()
     for (const post of beforePlatform) {
       counts.set(post.platform, (counts.get(post.platform) ?? 0) + 1)
     }
-    return CONTENT_PLATFORMS.filter(
-      (option) => counts.has(option) || option === platform,
-    ).map((option) => ({
-      value: option as string,
-      label: CONTENT_PLATFORM_LABELS[option],
-      count: counts.get(option) ?? 0,
-    }))
+    return [
+      { value: "ALL", label: "All", count: beforePlatform.length },
+      ...CONTENT_PLATFORMS.filter(
+        (option) => (counts.get(option) ?? 0) > 0 || option === platform,
+      ).map((option) => ({
+        value: option as string,
+        label: CONTENT_PLATFORM_LABELS[option],
+        count: counts.get(option) ?? 0,
+      })),
+    ]
   }, [beforePlatform, platform])
 
   const toggle = (postId: string) =>
@@ -322,42 +330,47 @@ export function PostList({
         </div>
       </div>
 
-      {/* Platform tabs. Outside the toolbar and above both views: picking a
-          channel is the coarsest cut anyone makes here, so it stays one tap
-          away rather than living behind the Filters panel. Horizontally
-          scrollable because four channels plus All overflow a phone. */}
-      {platformTabs.length > 1 ? (
-        <div
-          role="tablist"
-          aria-label="Filter by platform"
-          className="-mx-1 flex items-center gap-1 overflow-x-auto px-1 pb-1"
-        >
-          {[{ value: "ALL", label: "All", count: beforePlatform.length }, ...platformTabs].map(
-            (tab) => {
-              const active = platform === tab.value
-              return (
-                <button
-                  key={tab.value}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setPlatform(tab.value)}
-                  className={cn(
-                    "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                    active
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "bg-card text-muted-foreground hover:bg-muted",
-                  )}
-                >
-                  {tab.value === "ALL" ? null : <PlatformDot platform={tab.value} />}
-                  {tab.label}
-                  <span className="tabular-nums opacity-70">{tab.count}</span>
-                </button>
-              )
-            },
-          )}
-        </div>
-      ) : null}
+      {/* Platform tabs, as the same segmented control the people directory uses
+          for roles: picking a channel is the coarsest cut anyone makes here, so
+          it stays one tap away rather than living behind the Filters panel, and
+          the counts riding alongside each label make the split obvious without
+          opening anything. Horizontally scrollable because four channels plus
+          All overflow a phone. */}
+      <div
+        role="tablist"
+        aria-label="Filter by platform"
+        className="bg-muted flex w-full gap-1 overflow-x-auto rounded-md p-1 sm:w-fit"
+      >
+        {platformTabs.map((tab) => {
+          const active = platform === tab.value
+          return (
+            <button
+              key={tab.value}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setPlatform(tab.value)}
+              className={cn(
+                "flex shrink-0 cursor-pointer items-center gap-1.5 rounded-sm px-3 py-1.5 text-sm font-medium transition-colors",
+                active
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {tab.value === "ALL" ? null : <PlatformIcon platform={tab.value} />}
+              {tab.label}
+              <span
+                className={cn(
+                  "text-xs tabular-nums",
+                  active ? "text-muted-foreground" : "text-muted-foreground/70",
+                )}
+              >
+                {tab.count}
+              </span>
+            </button>
+          )
+        })}
+      </div>
 
       {view === "calendar" ? (
         <CalendarGrid

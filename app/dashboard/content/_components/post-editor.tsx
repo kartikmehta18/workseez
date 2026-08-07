@@ -30,9 +30,9 @@ import {
   CONTENT_KIND_LABELS,
   CONTENT_PLATFORMS,
   CONTENT_PLATFORM_LABELS,
-  CONTENT_STATUSES,
   CONTENT_STATUS_HINTS,
   CONTENT_STATUS_LABELS,
+  statusesForKind,
   toContentKind,
   toContentPlatform,
   toContentStatus,
@@ -83,6 +83,22 @@ function PostForm({ post, onDone }: { post: PostView; onDone: () => void }) {
   const [platform, setPlatform] = React.useState<ContentPlatform>(post.platform)
   const [status, setStatus] = React.useState(post.status)
 
+  // Keeps the post's own status listed even when the type no longer allows it,
+  // so an existing carousel left "in production" opens showing what it is.
+  const statuses = statusesForKind(kind, status)
+
+  /**
+   * Switching Reel → Post takes the camera statuses away with it, so a status
+   * the new type cannot be in drops back to Scripting rather than leaving the
+   * select showing a value that is no longer on offer. Nothing is saved until
+   * the form is submitted, so this is still undoable by cancelling.
+   */
+  const changeKind = (value: string) => {
+    const next = toContentKind(value)
+    setKind(next)
+    if (!statusesForKind(next).includes(status)) setStatus("SCRIPTING")
+  }
+
   const onSubmit = (formData: FormData) => {
     startTransition(async () => {
       const result = await savePost(formData)
@@ -126,7 +142,7 @@ function PostForm({ post, onDone }: { post: PostView; onDone: () => void }) {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="grid gap-2">
             <Label htmlFor={`kind-${post.id}`}>Type</Label>
-            <Select value={kind} onValueChange={(value) => setKind(toContentKind(value))}>
+            <Select value={kind} onValueChange={changeKind}>
               <SelectTrigger id={`kind-${post.id}`}>
                 <SelectValue />
               </SelectTrigger>
@@ -165,8 +181,10 @@ function PostForm({ post, onDone }: { post: PostView; onDone: () => void }) {
               <SelectTrigger id={`status-${post.id}`}>
                 <SelectValue />
               </SelectTrigger>
+              {/* Only the statuses this type can be in — a carousel is never
+                  waiting on a shoot or sitting with an editor. */}
               <SelectContent>
-                {CONTENT_STATUSES.map((option) => (
+                {statuses.map((option) => (
                   <SelectItem key={option} value={option}>
                     {CONTENT_STATUS_LABELS[option]}
                   </SelectItem>
