@@ -412,7 +412,15 @@ export function toPostComments(comments: LoadedComment[], actor: Actor): PostCom
   }))
 }
 
-type LoadedPost = {
+/**
+ * A post as the *list* loads it. Deliberately narrower than what a post
+ * actually holds: a cycle's worth of cards renders collapsed, so the list has
+ * no use for comment bodies, author avatars or the file table, and loading them
+ * for every post meant four extra relation queries and a payload dominated by
+ * text nobody had asked to see yet. Counts are enough for the collapsed row;
+ * the rest arrives when a card is opened.
+ */
+type LoadedListPost = {
   id: string
   title: string
   kind: string
@@ -427,6 +435,13 @@ type LoadedPost = {
   finalEditUrl: string | null
   rawFolderUrl: string | null
   editsFolderUrl: string | null
+  /** Read to build the search index below, never sent to the browser. */
+  lines: { label: string; body: string }[]
+  _count: { comments: number; assets: number }
+}
+
+/** Everything on one post, as the expanded card loads it. */
+type LoadedPost = {
   lines: { id: string; label: string; body: string }[]
   assets: {
     id: string
@@ -438,6 +453,7 @@ type LoadedPost = {
     uploadedBy: { name: string | null; email: string } | null
   }[]
   comments: LoadedComment[]
+  notes: string | null
 }
 
 export type PostView = {
@@ -457,6 +473,21 @@ export type PostView = {
   finalEditUrl: string | null
   rawFolderUrl: string | null
   editsFolderUrl: string | null
+  commentCount: number
+  assetCount: number
+  /**
+   * Everything the search box matches on, lowercased once here.
+   *
+   * The list used to rebuild this per post on every keystroke — joining the
+   * title, caption, notes and every script line, then lowercasing the result —
+   * which is what made typing in the filter stutter. It also lets the script
+   * stay searchable now that its text no longer travels to the browser.
+   */
+  search: string
+}
+
+/** The parts of a post that only an expanded card needs. */
+export type PostDetail = {
   script: { id: string; label: string; body: string }[]
   assets: {
     id: string
@@ -468,7 +499,6 @@ export type PostView = {
     uploadedBy: string | null
   }[]
   comments: PostComment[]
-  commentCount: number
 }
 
 function formatBytes(bytes: number | null) {
@@ -484,7 +514,14 @@ function formatBytes(bytes: number | null) {
  * pre-formatted, because Date objects cross the server/client boundary but then
  * format against the server's locale, which is not the reader's.
  */
-export function toPostView(post: LoadedPost, actor: Actor): PostView {
+export function toPostView(post: LoadedListPost, actor: Actor): PostView {
+  const canManage = can(actor, "content:manage")
+  // Internal notes are stripped rather than merely hidden by the card: props
+  // reach the browser whether or not they are rendered, so the client's payload
+  // must not carry them at all — and for the same reason they stay out of the
+  // search index a client receives.
+  const notes = canManage ? post.notes : null
+
   return {
     id: post.id,
     title: post.title,
@@ -496,14 +533,27 @@ export function toPostView(post: LoadedPost, actor: Actor): PostView {
     shared: post.sharedAt !== null,
     needsRawUpload: post.needsRawUpload,
     caption: post.caption,
-    // Internal notes are stripped here rather than merely hidden by the card:
-    // props reach the browser whether or not they are rendered, so the client's
-    // payload must not carry them at all.
-    notes: can(actor, "content:manage") ? post.notes : null,
+    notes,
     rawFileUrl: post.rawFileUrl,
     finalEditUrl: post.finalEditUrl,
     rawFolderUrl: post.rawFolderUrl,
     editsFolderUrl: post.editsFolderUrl,
+    commentCount: post._count.comments,
+    assetCount: post._count.assets,
+    search: [
+      post.title,
+      post.caption ?? "",
+      notes ?? "",
+      ...post.lines.flatMap((line) => [line.label, line.body]),
+    ]
+      .join(" ")
+      .toLowerCase(),
+  }
+}
+
+/** The same reshaping for the parts an expanded card asks for separately. */
+export function toPostDetail(post: LoadedPost, actor: Actor): PostDetail {
+  return {
     script: post.lines.map(({ id, label, body }) => ({ id, label, body })),
     assets: post.assets.map((asset) => ({
       id: asset.id,
@@ -515,7 +565,6 @@ export function toPostView(post: LoadedPost, actor: Actor): PostView {
       uploadedBy: asset.uploadedBy?.name ?? asset.uploadedBy?.email ?? null,
     })),
     comments: toPostComments(post.comments, actor),
-    commentCount: post.comments.length,
   }
 }
 

@@ -2,7 +2,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeft, ArrowRight, CalendarDays, ClipboardList, Target } from "lucide-react"
 import { prisma } from "@/lib/db"
-import { requireActor } from "@/lib/auth"
+import { getCurrentActor, requireActor } from "@/lib/auth"
 import { getVisibleClient } from "@/lib/clients"
 import { can } from "@/lib/rbac"
 import { calendarProgress } from "@/lib/content"
@@ -25,9 +25,17 @@ import { EditClientDialog } from "./_components/edit-client-dialog"
 import { ManagerAssignment } from "./_components/manager-assignment"
 import { ResendInviteButton } from "./_components/resend-invite-button"
 
+/**
+ * The page's own `getVisibleClient` is memoised per request, so reusing it here
+ * costs nothing: this used to be a second `client.findUnique` running alongside
+ * the page's, purely to put a name in the tab title.
+ */
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const client = await prisma.client.findUnique({ where: { id }, select: { name: true } })
+  const actor = await getCurrentActor()
+  if (!actor) return { title: "Client — Workseez" }
+
+  const client = await getVisibleClient(actor, id)
   return { title: client ? `${client.name} — Workseez` : "Client — Workseez" }
 }
 
@@ -42,65 +50,73 @@ export default async function ClientProfilePage({ params }: { params: Promise<{ 
 
   const canEdit = can(actor, "client:edit")
   const canAssign = can(actor, "client:assignManager")
-
-  const onboarding = can(actor, "onboarding:manage")
-    ? await prisma.onboardingForm.findUnique({
-        where: { clientId: client.id },
-        select: {
-          status: true,
-          submittedAt: true,
-          sections: {
-            select: { questions: { select: { required: true, answer: { select: { value: true } } } } },
+  // One wave, not four. These reads have nothing to do with each other — the
+  // questionnaire, the strategy sheet, the calendar and the assignable team
+  // are four independent rows — but awaiting them in sequence meant four
+  // serialised trips to a database that sits across the public internet.
+  const [onboarding, strategy, calendar, teamMembers] = await Promise.all([
+    can(actor, "onboarding:manage")
+      ? prisma.onboardingForm.findUnique({
+          where: { clientId: client.id },
+          select: {
+            status: true,
+            submittedAt: true,
+            sections: {
+              select: {
+                questions: { select: { required: true, answer: { select: { value: true } } } },
+              },
+            },
           },
-        },
-      })
-    : null
+        })
+      : null,
+
+    can(actor, "strategy:manage")
+      ? prisma.strategySheet.findUnique({
+          where: { clientId: client.id },
+          select: {
+            status: true,
+            approvedAt: true,
+            _count: { select: { comments: true } },
+            sections: {
+              select: {
+                kind: true,
+                columns: { select: { id: true } },
+                rows: { select: { label: true, cells: true } },
+              },
+            },
+          },
+        })
+      : null,
+
+    can(actor, "content:manage")
+      ? prisma.contentCalendar.findUnique({
+          where: { clientId: client.id },
+          select: {
+            title: true,
+            posts: {
+              select: {
+                status: true,
+                sharedAt: true,
+                needsRawUpload: true,
+                _count: { select: { comments: true } },
+              },
+            },
+          },
+        })
+      : null,
+
+    canAssign
+      ? prisma.user.findMany({
+          where: { role: { in: ["ADMIN", "MANAGER"] }, status: { not: "DISABLED" } },
+          select: { id: true, name: true, email: true, role: true },
+          orderBy: { createdAt: "asc" },
+        })
+      : [],
+  ])
+
   const onboardingProgress = onboarding ? formProgress(onboarding) : null
-
-  const strategy = can(actor, "strategy:manage")
-    ? await prisma.strategySheet.findUnique({
-        where: { clientId: client.id },
-        select: {
-          status: true,
-          approvedAt: true,
-          _count: { select: { comments: true } },
-          sections: {
-            select: {
-              kind: true,
-              columns: { select: { id: true } },
-              rows: { select: { label: true, cells: true } },
-            },
-          },
-        },
-      })
-    : null
   const strategyProgress = strategy ? sheetProgress(strategy) : null
-
-  const calendar = can(actor, "content:manage")
-    ? await prisma.contentCalendar.findUnique({
-        where: { clientId: client.id },
-        select: {
-          title: true,
-          posts: {
-            select: {
-              status: true,
-              sharedAt: true,
-              needsRawUpload: true,
-              _count: { select: { comments: true } },
-            },
-          },
-        },
-      })
-    : null
   const calendarStats = calendar ? calendarProgress(calendar.posts) : null
-
-  const teamMembers = canAssign
-    ? await prisma.user.findMany({
-        where: { role: { in: ["ADMIN", "MANAGER"] }, status: { not: "DISABLED" } },
-        select: { id: true, name: true, email: true, role: true },
-        orderBy: { createdAt: "asc" },
-      })
-    : []
 
   return (
     <div className="mx-auto w-full max-w-5xl">

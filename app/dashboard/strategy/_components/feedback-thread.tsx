@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Loader2, MessageSquare, Send, Trash2 } from "lucide-react"
 
@@ -34,7 +33,6 @@ export function FeedbackThread({
   viewerRole: string
   emptyHint: string
 }) {
-  const router = useRouter()
   const [pending, startTransition] = React.useTransition()
   const [body, setBody] = React.useState("")
 
@@ -51,7 +49,6 @@ export function FeedbackThread({
       if (result.ok) {
         // Cleared only on success, so a failed post doesn't lose what they wrote.
         setBody("")
-        router.refresh()
       } else {
         toast.error(result.error)
       }
@@ -66,7 +63,6 @@ export function FeedbackThread({
       const result = await deleteComment(formData)
       if (result.ok) {
         toast.success("Feedback deleted.")
-        router.refresh()
       } else {
         toast.error(result.error)
       }

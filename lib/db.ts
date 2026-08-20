@@ -50,6 +50,16 @@ const globalForPrisma = globalThis as unknown as {
 const adapter = globalForPrisma.adapter ?? new PrismaMariaDb(poolConfig())
 
 /**
+ * Set PRISMA_LOG_QUERIES=true to print every statement and its duration.
+ *
+ * Worth reaching for whenever a page feels slow: against a shared host across
+ * the public internet the cost of a render is the *number* of round trips far
+ * more than the cost of any one of them, and that number is not obvious from
+ * reading the code — Prisma turns a nested `include` into several queries.
+ */
+const logQueries = process.env.PRISMA_LOG_QUERIES === "true"
+
+/**
  * The 5s default transaction budget assumes a local database. This one is a
  * shared host across the public internet, where a multi-statement save spends
  * most of its time in round-trip latency rather than in the database. Writers
@@ -62,7 +72,15 @@ export const prisma =
   new PrismaClient({
     adapter,
     transactionOptions: { timeout: 30_000, maxWait: 15_000 },
+    ...(logQueries ? { log: [{ emit: "event", level: "query" } as const] } : {}),
   })
+
+if (logQueries && !globalForPrisma.prisma) {
+  // @ts-expect-error - the event map is only typed when `log` is statically known.
+  prisma.$on("query", (event: { duration: number; query: string }) => {
+    console.log("[prisma] " + event.duration + "ms  " + event.query.slice(0, 120))
+  })
+}
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma

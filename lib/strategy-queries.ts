@@ -33,15 +33,16 @@ export type StrategySheetWithContent = NonNullable<Awaited<ReturnType<typeof get
  * A client's sheet, but only if this actor may see that client. Returns null
  * for out-of-scope clients so callers can `notFound()` rather than leak that
  * the client exists.
+ *
+ * The scope lives in the sheet's own `where` rather than in a separate lookup
+ * first: the guard and the read are one round trip, which is what
+ * `getVisibleSheet` below already does.
  */
 export async function getSheetForClient(actor: Actor, clientId: string) {
-  const client = await prisma.client.findFirst({
-    where: { AND: [{ id: clientId }, clientScopeFor(actor)] },
-    select: { id: true },
+  return prisma.strategySheet.findFirst({
+    where: { AND: [{ clientId }, { client: clientScopeFor(actor) }] },
+    include: SHEET_INCLUDE,
   })
-  if (!client) return null
-
-  return prisma.strategySheet.findUnique({ where: { clientId }, include: SHEET_INCLUDE })
 }
 
 /** Loads a sheet by its own id, scoped the same way. */

@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Loader2, Plus } from "lucide-react"
 
@@ -102,7 +101,6 @@ function NewPostForm({
   defaultDate?: string | null
   onDone: () => void
 }) {
-  const router = useRouter()
   const [pending, startTransition] = React.useTransition()
   const [kind, setKind] = React.useState<ContentKind>("REEL")
   const [platform, setPlatform] = React.useState<ContentPlatform>("INSTAGRAM")
@@ -118,7 +116,6 @@ function NewPostForm({
             : "Post created.",
         )
         onDone()
-        router.refresh()
       } else {
         toast.error(result.error)
       }

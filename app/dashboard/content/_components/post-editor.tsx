@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Loader2, Pencil } from "lucide-react"
 
@@ -38,6 +37,7 @@ import {
   toContentStatus,
   type ContentKind,
   type ContentPlatform,
+  type PostDetail,
   type PostView,
 } from "@/lib/content"
 import { ScriptEditor, toDraft } from "./script-editor"
@@ -53,7 +53,14 @@ import { savePost } from "../actions"
  * The script itself is ScriptEditor, shared with the create dialog so a post can
  * be written the moment it is added and reworked here later.
  */
-export function PostEditor({ post }: { post: PostView }) {
+export function PostEditor({
+  post,
+  script,
+}: {
+  post: PostView
+  /** Loaded with the rest of the card's detail — the list no longer carries it. */
+  script: PostDetail["script"]
+}) {
   const [open, setOpen] = React.useState(false)
 
   return (
@@ -69,14 +76,21 @@ export function PostEditor({ post }: { post: PostView }) {
             away on close. Resetting it in an effect instead would mean the
             dialog paints last session's draft for a frame before correcting
             itself, and would go stale the moment a save changed the post. */}
-        {open ? <PostForm post={post} onDone={() => setOpen(false)} /> : null}
+        {open ? <PostForm post={post} script={script} onDone={() => setOpen(false)} /> : null}
       </DialogContent>
     </Dialog>
   )
 }
 
-function PostForm({ post, onDone }: { post: PostView; onDone: () => void }) {
-  const router = useRouter()
+function PostForm({
+  post,
+  script,
+  onDone,
+}: {
+  post: PostView
+  script: PostDetail["script"]
+  onDone: () => void
+}) {
   const [pending, startTransition] = React.useTransition()
 
   const [kind, setKind] = React.useState<ContentKind>(post.kind)
@@ -105,7 +119,6 @@ function PostForm({ post, onDone }: { post: PostView; onDone: () => void }) {
       if (result.ok) {
         toast.success("Saved.")
         onDone()
-        router.refresh()
       } else {
         toast.error(result.error)
       }
@@ -267,7 +280,7 @@ function PostForm({ post, onDone }: { post: PostView; onDone: () => void }) {
           </div>
         </div>
 
-        <ScriptEditor idPrefix="Edit" kind={kind} initialLines={toDraft(post.script)} />
+        <ScriptEditor idPrefix="Edit" kind={kind} initialLines={toDraft(script)} />
 
         <div className="grid gap-2">
           <Label htmlFor={`caption-${post.id}`}>Caption</Label>

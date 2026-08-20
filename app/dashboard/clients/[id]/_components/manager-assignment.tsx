@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { ROLE_LABELS, isRole } from "@/lib/rbac"
@@ -19,7 +18,6 @@ export function ManagerAssignment({
   teamMembers: TeamMember[]
 }) {
   const [pending, startTransition] = React.useTransition()
-  const router = useRouter()
   const assigned = new Set(assignedIds)
 
   function toggle(userId: string, assign: boolean) {
@@ -31,7 +29,6 @@ export function ManagerAssignment({
       const result = await setClientManager(formData)
       if (result.ok) {
         toast.success(assign ? "Manager assigned." : "Manager removed.")
-        router.refresh()
       } else {
         toast.error(result.error)
       }

@@ -1,6 +1,6 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
+import { refresh, revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { getCurrentActor } from "@/lib/auth"
 import { sendTeamInviteEmail } from "@/lib/emails"
@@ -68,6 +68,7 @@ export async function inviteTeamMember(formData: FormData): Promise<ActionResult
   })
 
   revalidatePath("/dashboard/settings/access")
+  refresh()
   return { ok: true, emailed }
 }
 
@@ -112,6 +113,7 @@ export async function setUserRole(formData: FormData): Promise<ActionResult> {
 
   revalidatePath("/dashboard/settings/access")
   revalidatePath("/dashboard/clients")
+  refresh()
   return { ok: true }
 }
 
@@ -140,6 +142,7 @@ export async function setUserStatus(formData: FormData): Promise<ActionResult> {
   await prisma.user.update({ where: { id: userId }, data: { status } })
 
   revalidatePath("/dashboard/settings/access")
+  refresh()
   return { ok: true }
 }
 

@@ -1,6 +1,6 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
+import { refresh, revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { getCurrentActor } from "@/lib/auth"
 import { sendClientInviteEmail } from "@/lib/emails"
@@ -119,6 +119,7 @@ export async function createClient(formData: FormData): Promise<ActionResult> {
   })
 
   revalidatePath("/dashboard/clients")
+  refresh()
   return { ok: true, emailed }
 }
 
@@ -211,6 +212,7 @@ export async function updateClient(formData: FormData): Promise<ActionResult> {
 
   revalidatePath("/dashboard/clients")
   revalidatePath(`/dashboard/clients/${id}`)
+  refresh()
   return { ok: true, emailed }
 }
 
@@ -283,6 +285,7 @@ export async function setClientManager(formData: FormData): Promise<ActionResult
   }
 
   revalidatePath(`/dashboard/clients/${clientId}`)
+  refresh()
   return { ok: true }
 }
 
@@ -300,5 +303,6 @@ export async function deleteClient(formData: FormData): Promise<ActionResult> {
 
   await prisma.client.delete({ where: { id } })
   revalidatePath("/dashboard/clients")
+  refresh()
   return { ok: true }
 }

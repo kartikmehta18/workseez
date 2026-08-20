@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { Pencil } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -42,7 +41,6 @@ type ClientFields = {
 export function EditClientDialog({ client }: { client: ClientFields }) {
   const [open, setOpen] = React.useState(false)
   const [pending, startTransition] = React.useTransition()
-  const router = useRouter()
 
   const [email, setEmail] = React.useState(client.ownerEmail)
   const emailChanged = email.trim().toLowerCase() !== client.ownerEmail.toLowerCase()
@@ -59,7 +57,6 @@ export function EditClientDialog({ client }: { client: ClientFields }) {
               : "Client updated.",
         )
         setOpen(false)
-        router.refresh()
       } else {
         toast.error(result.error)
       }

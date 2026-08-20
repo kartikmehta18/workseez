@@ -1,14 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { CloudUpload, ExternalLink, FileVideo, FolderOpen, Loader2, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { GoogleDriveIcon } from "@/components/ui/google-drive-icon"
 import { cn } from "@/lib/utils"
-import { MAX_UPLOAD_FILES, type PostView } from "@/lib/content"
+import { MAX_UPLOAD_FILES, type PostDetail } from "@/lib/content"
 import { deleteAsset } from "../actions"
 
 const EXTERNAL = { target: "_blank", rel: "noopener noreferrer" } as const
@@ -35,12 +34,11 @@ export function RawUpload({
   postId: string
   postTitle: string
   folderUrl: string | null
-  assets: PostView["assets"]
+  assets: PostDetail["assets"]
   driveEnabled: boolean
   urgent?: boolean
   kind?: "RAW" | "EDIT"
 }) {
-  const router = useRouter()
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [files, setFiles] = React.useState<File[]>([])
   const [progress, setProgress] = React.useState<number | null>(null)
@@ -78,7 +76,6 @@ export function RawUpload({
         toast.success(`${count} ${count === 1 ? "file" : "files"} uploaded. Your team is notified.`)
         setFiles([])
         if (inputRef.current) inputRef.current.value = ""
-        router.refresh()
       } else {
         toast.error(payload.error ?? "The upload didn't go through. Try again.")
       }
@@ -100,7 +97,6 @@ export function RawUpload({
       const result = await deleteAsset(formData)
       if (result.ok) {
         toast.success("Removed from the post.")
-        router.refresh()
       } else {
         toast.error(result.error)
       }

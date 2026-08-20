@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Loader2, MessageSquare, Send, Trash2 } from "lucide-react"
 
@@ -40,7 +39,6 @@ export function PostFeedback({
   /** Inside a card, where the section chrome would be one border too many. */
   compact?: boolean
 }) {
-  const router = useRouter()
   const [pending, startTransition] = React.useTransition()
   const [body, setBody] = React.useState("")
 
@@ -58,7 +56,6 @@ export function PostFeedback({
         // Cleared only on success, so a failed post doesn't lose what they wrote.
         setBody("")
         toast.success("Sent. Your team will see it on their side.")
-        router.refresh()
       } else {
         toast.error(result.error)
       }
@@ -73,7 +70,6 @@ export function PostFeedback({
       const result = await deletePostComment(formData)
       if (result.ok) {
         toast.success("Feedback deleted.")
-        router.refresh()
       } else {
         toast.error(result.error)
       }

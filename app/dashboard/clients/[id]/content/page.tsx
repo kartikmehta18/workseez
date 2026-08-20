@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 import { ArrowLeft, CalendarDays } from "lucide-react"
 
 import { prisma } from "@/lib/db"
-import { requireActor } from "@/lib/auth"
+import { getCurrentActor, requireActor } from "@/lib/auth"
 import { getVisibleClient } from "@/lib/clients"
 import { can } from "@/lib/rbac"
 import {
@@ -26,7 +26,8 @@ import { PublishAllButton } from "@/app/dashboard/content/_components/publish-al
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const client = await prisma.client.findUnique({ where: { id }, select: { name: true } })
+  const actor = await getCurrentActor()
+  const client = actor ? await getVisibleClient(actor, id) : null
   return {
     title: client ? `${client.name} content — Workseez` : "Content Calendar — Workseez",
   }
@@ -112,7 +113,7 @@ export default async function ClientContentPage({ params }: { params: Promise<{ 
     ? currentCycleNumber(calendar.cycleStart, calendar.cycleLength)
     : null
   const progress = calendarProgress(calendar.posts)
-  const feedback = calendar.posts.reduce((sum, post) => sum + post.comments.length, 0)
+  const feedback = calendar.posts.reduce((sum, post) => sum + post._count.comments, 0)
   const awaitingFootage = calendar.posts.filter((post) => post.needsRawUpload).length
 
   return (

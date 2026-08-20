@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Plus } from "lucide-react"
 
@@ -38,7 +37,6 @@ export function CreateSheetDialog({ clients }: { clients: SelectableClient[] }) 
   const [open, setOpen] = React.useState(false)
   const [clientId, setClientId] = React.useState("")
   const [pending, startTransition] = React.useTransition()
-  const router = useRouter()
 
   const onSubmit = (formData: FormData) => {
     startTransition(async () => {
@@ -47,7 +45,6 @@ export function CreateSheetDialog({ clients }: { clients: SelectableClient[] }) 
         toast.success("Strategy sheet created. Fill it in, then publish.")
         setOpen(false)
         setClientId("")
-        router.refresh()
       } else {
         toast.error(result.error)
       }

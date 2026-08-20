@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { CalendarClock, Loader2, Settings2, Trash2 } from "lucide-react"
 
@@ -72,7 +71,6 @@ function SettingsDialog({
   settings: CalendarSettings
   canDelete: boolean
 }) {
-  const router = useRouter()
   const [open, setOpen] = React.useState(false)
   const [pending, startTransition] = React.useTransition()
 
@@ -82,7 +80,6 @@ function SettingsDialog({
       if (result.ok) {
         toast.success("Calendar updated.")
         setOpen(false)
-        router.refresh()
       } else {
         toast.error(result.error)
       }
@@ -104,7 +101,6 @@ function SettingsDialog({
       if (result.ok) {
         toast.success("Content calendar deleted.")
         setOpen(false)
-        router.refresh()
       } else {
         toast.error(result.error)
       }

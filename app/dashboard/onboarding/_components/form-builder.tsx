@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { ChevronDown, ChevronUp, GripVertical, Loader2, Plus, Trash2 } from "lucide-react"
 
@@ -63,7 +62,6 @@ export function FormBuilder({
   sections: BuilderSection[]
   onSaved?: () => void
 }) {
-  const router = useRouter()
   const [pending, startTransition] = React.useTransition()
 
   const [title, setTitle] = React.useState(initialTitle)
@@ -185,7 +183,6 @@ export function FormBuilder({
       if (result.ok) {
         toast.success("Questions saved.")
         onSaved?.()
-        router.refresh()
       } else {
         toast.error(result.error)
       }

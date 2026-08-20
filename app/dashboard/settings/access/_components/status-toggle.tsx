@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { setUserStatus } from "../actions"
@@ -16,7 +15,6 @@ export function StatusToggle({
   disabled?: boolean
 }) {
   const [pending, startTransition] = React.useTransition()
-  const router = useRouter()
   const disabling = status !== "DISABLED"
 
   function onClick() {
@@ -28,7 +26,6 @@ export function StatusToggle({
       const result = await setUserStatus(formData)
       if (result.ok) {
         toast.success(disabling ? "Account disabled." : "Account re-enabled.")
-        router.refresh()
       } else {
         toast.error(result.error)
       }
