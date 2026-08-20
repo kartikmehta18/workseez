@@ -1,6 +1,6 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
+import { refresh, revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { getCurrentActor } from "@/lib/auth"
 import { clientScopeFor } from "@/lib/clients"
@@ -20,13 +20,21 @@ function fail(error: string): ActionResult {
   return { ok: false, error }
 }
 
-/** Revalidates every route that renders this sheet. */
+/**
+ * Revalidates every route that renders this sheet, and refreshes the one the
+ * caller is looking at.
+ *
+ * `refresh` replaces the `router.refresh()` the client components used to call
+ * on success: doing it here sends the updated tree back on the action's own
+ * response instead of paying a second round trip for it.
+ */
 function revalidateSheet(clientId: string) {
   revalidatePath("/dashboard")
   revalidatePath("/dashboard/strategy")
   revalidatePath("/dashboard/clients")
   revalidatePath(`/dashboard/clients/${clientId}`)
   revalidatePath(`/dashboard/clients/${clientId}/strategy`)
+  refresh()
 }
 
 /**

@@ -11,7 +11,7 @@ import {
 } from "lucide-react"
 import { prisma } from "@/lib/db"
 import { requireActor } from "@/lib/auth"
-import { listVisibleClients } from "@/lib/clients"
+import { listVisibleClients, visibleClientStats } from "@/lib/clients"
 import { formatDayMonth } from "@/lib/content"
 import { getOwnCalendarSummary } from "@/lib/content-queries"
 import { formProgress } from "@/lib/onboarding"
@@ -26,21 +26,32 @@ import { FormStatusBadge, ProgressBar } from "./onboarding/_components/onboardin
 
 export const metadata = { title: "Dashboard — Workseez" }
 
+/** How many client cards the overview grid shows. */
+const RECENT_CLIENTS = 6
+
 export default async function DashboardPage() {
   const actor = await requireActor()
-  const clients = await listVisibleClients(actor)
   const firstName = (actor.name ?? actor.email).split(" ")[0]
 
   // A client sees their own workspace, not the agency-wide overview.
   if (!isTeamRole(actor.role)) {
-    const own = clients[0]
+    // One wave rather than three awaits in a row: a client owns exactly one
+    // workspace, and their profile, questionnaire and calendar have nothing to
+    // do with each other.
+    //
     // getOwnForm hides drafts, so an unpublished form never surfaces here.
-    const ownForm = await getOwnForm(actor)
+    // The calendar carries only posts already published to them, so the card
+    // can never spoil work in progress.
+    const [clients, ownForm, calendar] = await Promise.all([
+      listVisibleClients(actor, 1),
+      getOwnForm(actor),
+      getOwnCalendarSummary(actor),
+    ])
+
+    const own = clients[0]
     const ownProgress = ownForm ? formProgress(ownForm) : null
-    // Only posts already published to them, so the card can never spoil work in
-    // progress. Upcoming first, and anything waiting on their footage pulled to
-    // the front — that is the one thing on this page they have to act on.
-    const calendar = await getOwnCalendarSummary(actor)
+    // Upcoming first, and anything waiting on their footage pulled to the front
+    // — that is the one thing on this page they have to act on.
     const awaitingFootage = calendar?.posts.filter((post) => post.needsRawUpload) ?? []
     const upcoming = (calendar?.posts ?? [])
       .filter((post) => post.status !== "PUBLISHED" && !post.needsRawUpload)
@@ -186,15 +197,21 @@ export default async function DashboardPage() {
     )
   }
 
-  const activeClients = clients.filter((c) => c.status === "ACTIVE").length
-  const pendingInvites = clients.filter((c) => c.owner?.status === "INVITED").length
-  const teamCount = can(actor, "user:viewAll")
-    ? await prisma.user.count({ where: { role: { not: "CLIENT" } } })
-    : null
+  // The card grid shows six clients, so only six are loaded. The headline
+  // numbers come from counts rather than from filtering a full list in JS —
+  // that meant loading every client, with every owner, manager and link, to
+  // render two integers.
+  const [clients, clientStats, teamCount] = await Promise.all([
+    listVisibleClients(actor, RECENT_CLIENTS),
+    visibleClientStats(actor),
+    can(actor, "user:viewAll")
+      ? prisma.user.count({ where: { role: { not: "CLIENT" } } })
+      : null,
+  ])
 
   const stats = [
-    { label: "Active clients", value: activeClients, icon: Users },
-    { label: "Awaiting first sign-in", value: pendingInvites, icon: UserCheck },
+    { label: "Active clients", value: clientStats.active, icon: Users },
+    { label: "Awaiting first sign-in", value: clientStats.pendingInvites, icon: UserCheck },
     ...(teamCount === null ? [] : [{ label: "Team members", value: teamCount, icon: UserCog }]),
   ]
 
@@ -236,17 +253,17 @@ export default async function DashboardPage() {
       <section className="mt-8">
         <div className="flex items-center justify-between gap-3">
           <h2 className="font-medium">Recent clients</h2>
-          {clients.length > 6 ? (
+          {clientStats.total > RECENT_CLIENTS ? (
             <Link
               href="/dashboard/clients"
               className="text-muted-foreground hover:text-primary text-sm transition-colors"
             >
-              See all {clients.length}
+              See all {clientStats.total}
             </Link>
           ) : null}
         </div>
 
-        {clients.length === 0 ? (
+        {clientStats.total === 0 ? (
           <div className="mt-3 rounded-xl border border-dashed p-12 text-center">
             <Users className="text-muted-foreground mx-auto size-8" />
             <p className="mt-3 font-medium">No clients yet</p>
@@ -263,7 +280,7 @@ export default async function DashboardPage() {
           </div>
         ) : (
           <ul className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {clients.slice(0, 6).map((client) => (
+            {clients.map((client) => (
               <li key={client.id}>
                 <Link
                   href={`/dashboard/clients/${client.id}`}

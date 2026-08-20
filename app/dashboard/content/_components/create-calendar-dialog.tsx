@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Loader2, Plus } from "lucide-react"
 
@@ -36,7 +35,6 @@ export type SelectableClient = { id: string; name: string; company: string | nul
  * only ever offers a valid choice — the same contract CreateSheetDialog has.
  */
 export function CreateCalendarDialog({ clients }: { clients: SelectableClient[] }) {
-  const router = useRouter()
   const [open, setOpen] = React.useState(false)
   const [clientId, setClientId] = React.useState("")
   const [pending, startTransition] = React.useTransition()
@@ -48,7 +46,6 @@ export function CreateCalendarDialog({ clients }: { clients: SelectableClient[] 
         toast.success("Content calendar created. Add the first post to get going.")
         setOpen(false)
         setClientId("")
-        router.refresh()
       } else {
         toast.error(result.error)
       }

@@ -42,6 +42,8 @@ model User {
   uploadedContentAssets   ContentAsset[]    @relation("ContentAssetUploader")
 
   @@index([role])
+  @@index([role, status])
+  @@index([createdAt])
 }
 
 model Client {
@@ -72,6 +74,7 @@ model Client {
   contentCalendar ContentCalendar?
 
   @@index([status])
+  @@index([createdAt])
 }
 
 // A client's social / external accounts. A separate table rather than columns
@@ -88,6 +91,7 @@ model ClientLink {
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
   @@index([clientId])
+  @@index([clientId, sortOrder])
 }
 
 // Which team members are assigned to which clients.
@@ -137,6 +141,7 @@ model OnboardingSection {
   questions OnboardingQuestion[]
 
   @@index([formId])
+  @@index([formId, sortOrder])
 }
 
 model OnboardingQuestion {
@@ -155,6 +160,7 @@ model OnboardingQuestion {
   answer  OnboardingAnswer?
 
   @@index([sectionId])
+  @@index([sectionId, sortOrder])
 }
 
 // One answer per question. Editing a question in the builder preserves its id,
@@ -231,6 +237,7 @@ model StrategySection {
   rows    StrategyRow[]
 
   @@index([sheetId])
+  @@index([sheetId, sortOrder])
 }
 
 // Only read when the section is a TABLE. Column order is the positional index
@@ -244,6 +251,7 @@ model StrategyColumn {
   section StrategySection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
   @@index([sectionId])
+  @@index([sectionId, sortOrder])
 }
 
 // One row of whichever shape the section is.
@@ -267,6 +275,7 @@ model StrategyRow {
   section StrategySection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
   @@index([sectionId])
+  @@index([sectionId, sortOrder])
 }
 
 // The feedback thread. One conversation per sheet, shared by the client and the
@@ -284,6 +293,7 @@ model StrategyComment {
   author User?         @relation("StrategyCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([sheetId])
+  @@index([sheetId, createdAt])
 }
 
 // The delivery schedule — every reel and post the team makes for a client, with
@@ -380,6 +390,8 @@ model ContentPost {
   @@index([calendarId])
   @@index([status])
   @@index([scheduledFor])
+  @@index([calendarId, scheduledFor, sortOrder])
+  @@index([sharedAt])
 }
 
 // A labelled line of the script — "Shoot Direction", "Text hook", "Voice over",
@@ -396,6 +408,7 @@ model ContentScriptLine {
   post ContentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@index([postId])
+  @@index([postId, sortOrder])
 }
 
 // Feedback on one post. Same shape as StrategyComment — authorRole is what the
@@ -412,6 +425,7 @@ model ContentComment {
   author User?       @relation("ContentCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
 
   @@index([postId])
+  @@index([postId, createdAt])
 }
 
 // A file uploaded against a post — raw footage from the client, or an edit from
@@ -438,4 +452,5 @@ model ContentAsset {
   post ContentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
 
   @@index([postId])
+  @@index([postId, createdAt])
 }

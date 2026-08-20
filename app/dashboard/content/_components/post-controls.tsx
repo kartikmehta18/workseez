@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { EyeOff, Loader2, Send, Trash2 } from "lucide-react"
 
@@ -42,7 +41,6 @@ export function PostControls({
   shared: boolean
   canDelete: boolean
 }) {
-  const router = useRouter()
   const [pending, startTransition] = React.useTransition()
 
   const changeStatus = (next: string) => {
@@ -57,7 +55,6 @@ export function PostControls({
             ? `Moved to ${CONTENT_STATUS_LABELS[next as ContentStatus]}. The client has been emailed.`
             : `Moved to ${CONTENT_STATUS_LABELS[next as ContentStatus]}.`,
         )
-        router.refresh()
       } else {
         toast.error(result.error)
       }
@@ -76,7 +73,6 @@ export function PostControls({
             ? "Published. The client can see it and has been emailed."
             : "Pulled back. The client can no longer see it.",
         )
-        router.refresh()
       } else {
         toast.error(result.error)
       }
@@ -97,7 +93,6 @@ export function PostControls({
       const result = await deletePost(formData)
       if (result.ok) {
         toast.success("Post deleted.")
-        router.refresh()
       } else {
         toast.error(result.error)
       }

@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Check, CheckCircle2, Loader2, Lock, Save, ShieldCheck } from "lucide-react"
 
@@ -57,7 +56,6 @@ export function AnswerForm({
   canEdit,
   isOwner,
 }: Props) {
-  const router = useRouter()
   const [pending, startTransition] = React.useTransition()
   const [intent, setIntent] = React.useState<"save" | "submit" | null>(null)
 
@@ -112,7 +110,6 @@ export function AnswerForm({
           ? "Submitted. Your team has everything they need."
           : "Progress saved.",
       )
-      router.refresh()
     })
   }
 
@@ -123,7 +120,6 @@ export function AnswerForm({
       const result = await reopenForm(formData)
       if (result.ok) {
         toast.success("Form reopened for editing.")
-        router.refresh()
       } else {
         toast.error(result.error)
       }

@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { Plus } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -23,7 +22,6 @@ import { ClientLinkFields } from "./client-link-fields"
 export function AddClientDialog() {
   const [open, setOpen] = React.useState(false)
   const [pending, startTransition] = React.useTransition()
-  const router = useRouter()
 
   function onSubmit(formData: FormData) {
     startTransition(async () => {
@@ -35,7 +33,6 @@ export function AddClientDialog() {
             : "Client created, but the invite email couldn't be sent — share the portal link yourself.",
         )
         setOpen(false)
-        router.refresh()
       } else {
         toast.error(result.error)
       }

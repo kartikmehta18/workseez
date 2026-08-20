@@ -64,6 +64,23 @@ export function PostList({
   const [showFilters, setShowFilters] = React.useState(false)
   const [openIds, setOpenIds] = React.useState<ReadonlySet<string>>(() => new Set())
 
+  /**
+   * Bumped whenever the server sends a new list, which is what a mutation does
+   * now that the actions call `refresh()`. Expanded cards fetch their script,
+   * files and feedback separately, so this is how a comment just posted or a
+   * script just saved reaches a card that is already open.
+   *
+   * Derived during render rather than in an effect — the same pattern the
+   * navigation hook uses — so the new version is in place before anything
+   * paints.
+   */
+  const [detailVersion, setDetailVersion] = React.useState(0)
+  const [lastPosts, setLastPosts] = React.useState(posts)
+  if (lastPosts !== posts) {
+    setLastPosts(posts)
+    setDetailVersion((current) => current + 1)
+  }
+
   const selectedCycle = cycles.find((option) => String(option.number) === cycle) ?? null
 
   /**
@@ -91,17 +108,10 @@ export function PostList({
       if (from && (!post.scheduledDate || post.scheduledDate < from)) return false
       if (to && (!post.scheduledDate || post.scheduledDate > to)) return false
 
-      if (needle) {
-        const haystack = [
-          post.title,
-          post.caption ?? "",
-          post.notes ?? "",
-          ...post.script.flatMap((line) => [line.label, line.body]),
-        ]
-          .join(" ")
-          .toLowerCase()
-        if (!haystack.includes(needle)) return false
-      }
+      // Matched against an index the server built once per post. This used to
+      // join and lowercase the title, caption, notes and every script line for
+      // every post on every keystroke, which is what made typing here stutter.
+      if (needle && !post.search.includes(needle)) return false
 
       return true
     })
@@ -142,13 +152,17 @@ export function PostList({
     ]
   }, [beforePlatform, platform])
 
-  const toggle = (postId: string) =>
+  // Stable across renders so the memo on PostCard holds: a fresh closure per
+  // card would change every card's props on every keystroke and re-render the
+  // whole list anyway.
+  const toggle = React.useCallback((postId: string) => {
     setOpenIds((current) => {
       const next = new Set(current)
       if (next.has(postId)) next.delete(postId)
       else next.add(postId)
       return next
     })
+  }, [])
 
   /** Tapping a day in the month view jumps to that card, opened. */
   const openFromCalendar = (postId: string) => {
@@ -409,7 +423,8 @@ export function PostList({
                 canComment={canComment}
                 driveEnabled={driveEnabled}
                 open={openIds.has(post.id)}
-                onToggle={() => toggle(post.id)}
+                detailVersion={detailVersion}
+                onToggle={toggle}
               />
             ))}
           </ul>

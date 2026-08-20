@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 import { ArrowLeft, ClipboardList } from "lucide-react"
 
 import { prisma } from "@/lib/db"
-import { requireActor } from "@/lib/auth"
+import { getCurrentActor, requireActor } from "@/lib/auth"
 import { getVisibleClient } from "@/lib/clients"
 import { can } from "@/lib/rbac"
 import { formProgress, toAnswerSections, toBuilderSections } from "@/lib/onboarding"
@@ -21,7 +21,8 @@ import { PublishControls } from "@/app/dashboard/onboarding/_components/publish-
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const client = await prisma.client.findUnique({ where: { id }, select: { name: true } })
+  const actor = await getCurrentActor()
+  const client = actor ? await getVisibleClient(actor, id) : null
   return { title: client ? `${client.name} onboarding — Workseez` : "Onboarding — Workseez" }
 }
 

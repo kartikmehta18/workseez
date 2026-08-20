@@ -12,6 +12,37 @@ import { can, type Actor } from "@/lib/rbac"
  * `fs`/`net`/`tls`.
  */
 
+/**
+ * What the *list* needs from a post.
+ *
+ * The full `POST_INCLUDE` below pulls every script line, every asset with its
+ * uploader and every comment with its author — for every post on the calendar,
+ * unbounded. A cycle's cards render collapsed and show two numbers, so that was
+ * four relation queries and a large payload spent on content nobody had opened
+ * yet. Script lines are still read, because the search box matches on them, but
+ * they are reduced to a single index string server-side and never serialised to
+ * the browser.
+ */
+const POST_LIST_SELECT = {
+  id: true,
+  title: true,
+  kind: true,
+  platform: true,
+  status: true,
+  scheduledFor: true,
+  sortOrder: true,
+  sharedAt: true,
+  needsRawUpload: true,
+  caption: true,
+  notes: true,
+  rawFileUrl: true,
+  finalEditUrl: true,
+  rawFolderUrl: true,
+  editsFolderUrl: true,
+  lines: { orderBy: { sortOrder: "asc" }, select: { label: true, body: true } },
+  _count: { select: { comments: true, assets: true } },
+} satisfies Prisma.ContentPostSelect
+
 const POST_INCLUDE = {
   lines: { orderBy: { sortOrder: "asc" } },
   assets: {
@@ -27,17 +58,19 @@ const POST_INCLUDE = {
   // arrays readonly, which Prisma's own input types reject.
 } satisfies Prisma.ContentPostInclude
 
+/** Undated posts sort last, then the manual order breaks ties within a day. */
+const POST_ORDER = [
+  { scheduledFor: "asc" },
+  { sortOrder: "asc" },
+  { createdAt: "asc" },
+] satisfies Prisma.ContentPostOrderByWithRelationInput[]
+
 const CALENDAR_INCLUDE = {
   client: {
     select: { id: true, name: true, company: true, ownerUserId: true, driveUrl: true },
   },
   createdBy: { select: { name: true, email: true } },
-  posts: {
-    // Undated posts sort last: `scheduledFor` nulls go to the end, then the
-    // manual order breaks ties within a day.
-    orderBy: [{ scheduledFor: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
-    include: POST_INCLUDE,
-  },
+  posts: { orderBy: POST_ORDER, select: POST_LIST_SELECT },
 } satisfies Prisma.ContentCalendarInclude
 
 export type CalendarWithPosts = NonNullable<Awaited<ReturnType<typeof getCalendarForClient>>>
@@ -47,15 +80,15 @@ export type PostWithContent = CalendarWithPosts["posts"][number]
  * A client's calendar, but only if this actor may see that client. Returns null
  * for out-of-scope clients so callers can `notFound()` rather than leak that
  * the client exists.
+ *
+ * The scope sits in the calendar's own `where` rather than in a separate lookup
+ * first, so the guard and the read are one round trip.
  */
 export async function getCalendarForClient(actor: Actor, clientId: string) {
-  const client = await prisma.client.findFirst({
-    where: { AND: [{ id: clientId }, clientScopeFor(actor)] },
-    select: { id: true },
+  return prisma.contentCalendar.findFirst({
+    where: { AND: [{ clientId }, { client: clientScopeFor(actor) }] },
+    include: CALENDAR_INCLUDE,
   })
-  if (!client) return null
-
-  return prisma.contentCalendar.findUnique({ where: { clientId }, include: CALENDAR_INCLUDE })
 }
 
 /**
@@ -72,8 +105,8 @@ export async function getOwnCalendar(actor: Actor) {
       ...CALENDAR_INCLUDE,
       posts: {
         where: { sharedAt: { not: null } },
-        orderBy: [{ scheduledFor: "asc" }, { sortOrder: "asc" }, { createdAt: "asc" }],
-        include: POST_INCLUDE,
+        orderBy: POST_ORDER,
+        select: POST_LIST_SELECT,
       },
     },
   })
@@ -171,24 +204,28 @@ export async function listCalendarOverviews(actor: Actor) {
  * leave, and an unassigned client would otherwise notify no one at all.
  */
 export async function calendarRecipients(clientId: string) {
-  const client = await prisma.client.findUnique({
-    where: { id: clientId },
-    select: {
-      id: true,
-      name: true,
-      company: true,
-      owner: { select: { email: true, name: true, status: true } },
-      managers: {
-        select: { user: { select: { email: true, name: true, status: true } } },
+  // Independent of each other, so they go together rather than one after the
+  // other — this runs on the notification path for every publish and every
+  // piece of feedback.
+  const [client, admins] = await Promise.all([
+    prisma.client.findUnique({
+      where: { id: clientId },
+      select: {
+        id: true,
+        name: true,
+        company: true,
+        owner: { select: { email: true, name: true, status: true } },
+        managers: {
+          select: { user: { select: { email: true, name: true, status: true } } },
+        },
       },
-    },
-  })
+    }),
+    prisma.user.findMany({
+      where: { role: { in: ["SUPER_ADMIN", "ADMIN"] }, status: "ACTIVE" },
+      select: { email: true, name: true },
+    }),
+  ])
   if (!client) return null
-
-  const admins = await prisma.user.findMany({
-    where: { role: { in: ["SUPER_ADMIN", "ADMIN"] }, status: "ACTIVE" },
-    select: { email: true, name: true },
-  })
 
   const team = new Map<string, { email: string; name: string | null }>()
   for (const { user } of client.managers) {

@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 
@@ -31,7 +30,6 @@ export function SignOffEditor({
   teamLeadName: string | null
   teamLeadDate: string | null
 }) {
-  const router = useRouter()
   const [pending, startTransition] = React.useTransition()
 
   const onSubmit = (formData: FormData) => {
@@ -39,7 +37,6 @@ export function SignOffEditor({
       const result = await saveSignOff(formData)
       if (result.ok) {
         toast.success("Sign-off saved.")
-        router.refresh()
       } else {
         toast.error(result.error)
       }

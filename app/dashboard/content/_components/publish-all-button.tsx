@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Loader2, Send } from "lucide-react"
 
@@ -22,7 +21,6 @@ export function PublishAllButton({
   calendarId: string
   pendingCount: number
 }) {
-  const router = useRouter()
   const [pending, startTransition] = React.useTransition()
 
   if (pendingCount === 0) return null
@@ -41,7 +39,6 @@ export function PublishAllButton({
       const result = await publishAllPosts(formData)
       if (result.ok) {
         toast.success("Published. The client has been emailed.")
-        router.refresh()
       } else {
         toast.error(result.error)
       }

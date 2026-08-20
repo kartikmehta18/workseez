@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Check, Eye, EyeOff, Loader2, RotateCcw, Send, Trash2 } from "lucide-react"
 
@@ -26,7 +25,6 @@ export function PublishControls({
   rowCount: number
   canDelete: boolean
 }) {
-  const router = useRouter()
   const [pending, startTransition] = React.useTransition()
   const published = status !== "DRAFT"
 
@@ -42,7 +40,6 @@ export function PublishControls({
             ? "Published. The client can now read it and leave feedback."
             : "Moved back to draft. The client can no longer see it.",
         )
-        router.refresh()
       } else {
         toast.error(result.error)
       }
@@ -63,7 +60,6 @@ export function PublishControls({
       const result = await deleteStrategySheet(formData)
       if (result.ok) {
         toast.success("Strategy sheet deleted.")
-        router.refresh()
       } else {
         toast.error(result.error)
       }
@@ -120,7 +116,6 @@ export function ApprovalControl({
   approvedAt: string | null
   isOwner: boolean
 }) {
-  const router = useRouter()
   const [pending, startTransition] = React.useTransition()
   const approved = status === "APPROVED"
 
@@ -134,7 +129,6 @@ export function ApprovalControl({
         toast.success(
           next ? "Approved. Your team will see the sign-off on their side." : "Reopened for changes.",
         )
-        router.refresh()
       } else {
         toast.error(result.error)
       }

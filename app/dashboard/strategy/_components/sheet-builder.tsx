@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { ChevronDown, ChevronUp, GripVertical, Loader2, Plus, Trash2, X } from "lucide-react"
 
@@ -65,7 +64,6 @@ export function SheetBuilder({
   sections: SheetSection[]
   onSaved?: () => void
 }) {
-  const router = useRouter()
   const [pending, startTransition] = React.useTransition()
 
   const [title, setTitle] = React.useState(initialTitle)
@@ -248,7 +246,6 @@ export function SheetBuilder({
       if (result.ok) {
         toast.success("Strategy sheet saved.")
         onSaved?.()
-        router.refresh()
       } else {
         toast.error(result.error)
       }

@@ -33,15 +33,16 @@ export type OnboardingFormWithContent = NonNullable<Awaited<ReturnType<typeof ge
  * A client's form, but only if this actor may see that client. Returns null for
  * out-of-scope clients so callers can `notFound()` rather than leak that the
  * client exists.
+ *
+ * The scope lives in the form's own `where` rather than in a separate lookup
+ * first: the guard and the read are one round trip, which is what
+ * `getVisibleForm` below already does.
  */
 export async function getFormForClient(actor: Actor, clientId: string) {
-  const client = await prisma.client.findFirst({
-    where: { AND: [{ id: clientId }, clientScopeFor(actor)] },
-    select: { id: true },
+  return prisma.onboardingForm.findFirst({
+    where: { AND: [{ clientId }, { client: clientScopeFor(actor) }] },
+    include: FORM_INCLUDE,
   })
-  if (!client) return null
-
-  return prisma.onboardingForm.findUnique({ where: { clientId }, include: FORM_INCLUDE })
 }
 
 /** Loads a form by its own id, scoped the same way. */

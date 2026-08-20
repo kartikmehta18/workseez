@@ -1,10 +1,11 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
+import { refresh, revalidatePath } from "next/cache"
+import { after } from "next/server"
 import { prisma } from "@/lib/db"
 import { getCurrentActor } from "@/lib/auth"
 import { clientScopeFor } from "@/lib/clients"
-import { calendarRecipients } from "@/lib/content-queries"
+import { calendarRecipients, getVisiblePost } from "@/lib/content-queries"
 import {
   sendContentFeedbackEmail,
   sendContentPublishedEmail,
@@ -25,9 +26,11 @@ import {
   seedScriptLines,
   toContentKind,
   toContentStatus,
+  toPostDetail,
   type ContentKind,
   type ContentPlatform,
   type ContentStatus,
+  type PostDetail,
 } from "@/lib/content"
 
 export type ActionResult = { ok: true } | { ok: false; error: string }
@@ -36,13 +39,23 @@ function fail(error: string): ActionResult {
   return { ok: false, error }
 }
 
-/** Revalidates every route that renders this client's calendar. */
+/**
+ * Revalidates every route that renders this client's calendar, and refreshes
+ * the one the caller is looking at.
+ *
+ * `refresh` is what the client components used to do for themselves with
+ * `router.refresh()`. Doing it here instead means the updated tree rides back
+ * on the action's own response: the caller used to pay a second full round trip
+ * — layout, page and every query behind them — to a database across the public
+ * internet, purely to see the change it had just made.
+ */
 function revalidateCalendar(clientId: string) {
   revalidatePath("/dashboard")
   revalidatePath("/dashboard/content")
   revalidatePath("/dashboard/clients")
   revalidatePath(`/dashboard/clients/${clientId}`)
   revalidatePath(`/dashboard/clients/${clientId}/content`)
+  refresh()
 }
 
 /**
@@ -111,6 +124,17 @@ async function actorWith(
  * Mail is a courtesy, never a precondition: a send that fails is logged by the
  * mailer and the action still reports success, because the change itself did
  * happen and the client will see it the next time they open the portal.
+ *
+ * That courtesy now costs the caller nothing. Every send is handed to `after`,
+ * which runs it once the response has gone out, so a status change returns as
+ * soon as the row is written rather than holding the spinner through a lookup
+ * of the recipients and an SMTP round trip to Gmail. Publishing a whole cycle
+ * was the worst of it: one recipient lookup and one blocking send *per post*,
+ * in series, before the button came back.
+ *
+ * These are deliberately not `async` — there is nothing left to await, and a
+ * caller that writes `await notify…()` would be waiting on the scheduling, not
+ * the mail.
  * ------------------------------------------------------------------ */
 
 type NotifiablePost = {
@@ -121,44 +145,55 @@ type NotifiablePost = {
   needsRawUpload: boolean
 }
 
-async function notifyClientPublished(clientId: string, post: NotifiablePost) {
-  try {
-    const recipients = await calendarRecipients(clientId)
-    if (!recipients?.clientEmail) return
-    await sendContentPublishedEmail({
-      to: recipients.clientEmail,
-      name: recipients.clientName,
-      postTitle: post.title,
-      kindLabel: CONTENT_KIND_LABELS[toContentKind(post.kind)],
-      statusLabel: CONTENT_STATUS_LABELS[toContentStatus(post.status)],
-      dateLabel: post.scheduledFor ? formatDayMonth(post.scheduledFor) : null,
-      needsRawUpload: post.needsRawUpload,
-    })
-  } catch (error) {
-    console.error("[content] publish notification failed", error)
-  }
+/**
+ * Announces one or more newly published posts.
+ *
+ * Takes a list rather than a single post so publishing a cycle resolves the
+ * recipients once instead of once per post — it is the same client every time.
+ */
+function notifyClientPublished(clientId: string, posts: NotifiablePost[]) {
+  if (posts.length === 0) return
+
+  after(async () => {
+    try {
+      const recipients = await calendarRecipients(clientId)
+      if (!recipients?.clientEmail) return
+
+      for (const post of posts) {
+        await sendContentPublishedEmail({
+          to: recipients.clientEmail,
+          name: recipients.clientName,
+          postTitle: post.title,
+          kindLabel: CONTENT_KIND_LABELS[toContentKind(post.kind)],
+          statusLabel: CONTENT_STATUS_LABELS[toContentStatus(post.status)],
+          dateLabel: post.scheduledFor ? formatDayMonth(post.scheduledFor) : null,
+          needsRawUpload: post.needsRawUpload,
+        })
+      }
+    } catch (error) {
+      console.error("[content] publish notification failed", error)
+    }
+  })
 }
 
-async function notifyClientStatus(
-  clientId: string,
-  post: NotifiablePost,
-  previousStatus: string,
-) {
-  try {
-    const recipients = await calendarRecipients(clientId)
-    if (!recipients?.clientEmail) return
-    await sendContentStatusEmail({
-      to: recipients.clientEmail,
-      name: recipients.clientName,
-      postTitle: post.title,
-      kindLabel: CONTENT_KIND_LABELS[toContentKind(post.kind)],
-      statusLabel: CONTENT_STATUS_LABELS[toContentStatus(post.status)],
-      dateLabel: post.scheduledFor ? formatDayMonth(post.scheduledFor) : null,
-      previousStatusLabel: CONTENT_STATUS_LABELS[toContentStatus(previousStatus)],
-    })
-  } catch (error) {
-    console.error("[content] status notification failed", error)
-  }
+function notifyClientStatus(clientId: string, post: NotifiablePost, previousStatus: string) {
+  after(async () => {
+    try {
+      const recipients = await calendarRecipients(clientId)
+      if (!recipients?.clientEmail) return
+      await sendContentStatusEmail({
+        to: recipients.clientEmail,
+        name: recipients.clientName,
+        postTitle: post.title,
+        kindLabel: CONTENT_KIND_LABELS[toContentKind(post.kind)],
+        statusLabel: CONTENT_STATUS_LABELS[toContentStatus(post.status)],
+        dateLabel: post.scheduledFor ? formatDayMonth(post.scheduledFor) : null,
+        previousStatusLabel: CONTENT_STATUS_LABELS[toContentStatus(previousStatus)],
+      })
+    } catch (error) {
+      console.error("[content] status notification failed", error)
+    }
+  })
 }
 
 /* ------------------------------------------------------------------ *
@@ -405,7 +440,7 @@ export async function createPost(formData: FormData): Promise<ActionResult> {
     select: { title: true, kind: true, status: true, scheduledFor: true, needsRawUpload: true },
   })
 
-  if (publishNow) await notifyClientPublished(calendar.clientId, post)
+  if (publishNow) notifyClientPublished(calendar.clientId, [post])
 
   revalidateCalendar(calendar.clientId)
   return { ok: true }
@@ -468,7 +503,7 @@ export async function savePost(formData: FormData): Promise<ActionResult> {
   ])
 
   if (existing.sharedAt && fields.status === "PUBLISHED" && existing.status !== "PUBLISHED") {
-    await notifyClientStatus(
+    notifyClientStatus(
       existing.calendar.clientId,
       { ...fields, scheduledFor: fields.scheduledFor },
       existing.status,
@@ -507,7 +542,7 @@ export async function setPostStatus(formData: FormData): Promise<ActionResult> {
   })
 
   if (post.sharedAt && status === "PUBLISHED") {
-    await notifyClientStatus(post.calendar.clientId, updated, post.status)
+    notifyClientStatus(post.calendar.clientId, updated, post.status)
   }
 
   revalidateCalendar(post.calendar.clientId)
@@ -531,7 +566,7 @@ export async function setPostShared(formData: FormData): Promise<ActionResult> {
 
   // Only on the transition into visibility — re-publishing something the client
   // has already been told about would just be a second copy of the same mail.
-  if (shared && !post.sharedAt) await notifyClientPublished(post.calendar.clientId, updated)
+  if (shared && !post.sharedAt) notifyClientPublished(post.calendar.clientId, [updated])
 
   revalidateCalendar(post.calendar.clientId)
   return { ok: true }
@@ -556,9 +591,11 @@ export async function publishAllPosts(formData: FormData): Promise<ActionResult>
     data: { sharedAt: new Date() },
   })
 
-  // Sequential, not Promise.all: the SMTP transport is a single pooled
-  // connection, and a burst of parallel sends is how you get rate-limited.
-  for (const post of pending) await notifyClientPublished(calendar.clientId, post)
+  // One call for the whole batch: the recipients are the same for every post,
+  // so this resolves them once and then sends sequentially (the SMTP transport
+  // is a single pooled connection, and a burst of parallel sends is how you get
+  // rate-limited) — all of it after the response has already gone out.
+  notifyClientPublished(calendar.clientId, pending)
 
   revalidateCalendar(calendar.clientId)
   return { ok: true }
@@ -625,21 +662,26 @@ export async function addPostComment(formData: FormData): Promise<ActionResult> 
   // client already gets a mail for every publish and status change, and a reply
   // notification on top of that is one mail too many.
   if (isOwner && !canManage) {
-    try {
-      const recipients = await calendarRecipients(post.calendar.clientId)
-      const excerpt = body.length > 400 ? `${body.slice(0, 400)}…` : body
-      for (const member of recipients?.team ?? []) {
-        await sendContentFeedbackEmail({
-          to: member.email,
-          clientName: post.calendar.client.name,
-          postTitle: post.title,
-          excerpt,
-          clientId: post.calendar.clientId,
-        })
+    // After the response: the client's comment is already saved, and waiting on
+    // one mail per team member before telling them so is what made leaving
+    // feedback feel like it had hung.
+    after(async () => {
+      try {
+        const recipients = await calendarRecipients(post.calendar.clientId)
+        const excerpt = body.length > 400 ? `${body.slice(0, 400)}…` : body
+        for (const member of recipients?.team ?? []) {
+          await sendContentFeedbackEmail({
+            to: member.email,
+            clientName: post.calendar.client.name,
+            postTitle: post.title,
+            excerpt,
+            clientId: post.calendar.clientId,
+          })
+        }
+      } catch (error) {
+        console.error("[content] feedback notification failed", error)
       }
-    } catch (error) {
-      console.error("[content] feedback notification failed", error)
-    }
+    })
   }
 
   revalidateCalendar(post.calendar.clientId)
@@ -697,4 +739,28 @@ export async function deleteAsset(formData: FormData): Promise<ActionResult> {
   await prisma.contentAsset.delete({ where: { id: asset.id } })
   revalidateCalendar(clientId)
   return { ok: true }
+}
+
+/**
+ * The parts of a post only an expanded card needs: the script, the file list
+ * and the feedback thread.
+ *
+ * These used to ride along with the calendar for every post at once, which
+ * meant a cycle's worth of scripts, comment bodies and author avatars crossed
+ * the wire before the reader had opened anything. Fetching them per card keeps
+ * the list small; `getVisiblePost` applies the same scope the calendar does, so
+ * a client still cannot reach a post that has not been published to them.
+ */
+export async function loadPostDetail(
+  postId: string,
+): Promise<{ ok: true; detail: PostDetail } | { ok: false; error: string }> {
+  const actor = await getCurrentActor()
+  if (!actor || actor.status !== "ACTIVE") {
+    return { ok: false, error: "Your session has expired. Sign in again." }
+  }
+
+  const post = await getVisiblePost(actor, postId)
+  if (!post) return { ok: false, error: "Post not found." }
+
+  return { ok: true, detail: toPostDetail(post, actor) }
 }

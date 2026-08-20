@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Eye, EyeOff, Loader2, Send, Trash2 } from "lucide-react"
 
@@ -26,7 +25,6 @@ export function PublishControls({
   questionCount: number
   canDelete: boolean
 }) {
-  const router = useRouter()
   const [pending, startTransition] = React.useTransition()
   const published = status !== "DRAFT"
 
@@ -42,7 +40,6 @@ export function PublishControls({
             ? "Published. The client can now fill it in."
             : "Moved back to draft. The client can no longer see it.",
         )
-        router.refresh()
       } else {
         toast.error(result.error)
       }
@@ -63,7 +60,6 @@ export function PublishControls({
       const result = await deleteOnboardingForm(formData)
       if (result.ok) {
         toast.success("Onboarding form deleted.")
-        router.refresh()
       } else {
         toast.error(result.error)
       }

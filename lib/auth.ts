@@ -1,3 +1,4 @@
+import { cache } from "react"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/db"
@@ -15,8 +16,15 @@ import {
  * from the database. The role deliberately does NOT come from the JWT: a Super
  * Admin demoting someone must take effect on their very next request, not
  * whenever their week-old cookie happens to expire.
+ *
+ * Wrapped in React `cache`, which memoises per *request*, not across requests.
+ * The dashboard layout, the page it renders and any server action all ask for
+ * the actor, and without this each one paid its own round trip to a database
+ * that sits across the public internet — three lookups of the same row to
+ * render one screen. Per-request scope is what keeps the guarantee above
+ * intact: the next request still re-reads the role from the database.
  */
-export async function getCurrentActor(): Promise<Actor | null> {
+export const getCurrentActor = cache(async function getCurrentActor(): Promise<Actor | null> {
   const store = await cookies()
   const session = await decodeSession(store.get(SESSION_COOKIE)?.value)
   if (!session) return null
@@ -35,7 +43,7 @@ export async function getCurrentActor(): Promise<Actor | null> {
     role: isRole(user.role) ? user.role : "CLIENT",
     status: user.status as UserStatus,
   }
-}
+})
 
 /** For pages: returns an active actor or redirects to login. */
 export async function requireActor(): Promise<Actor> {

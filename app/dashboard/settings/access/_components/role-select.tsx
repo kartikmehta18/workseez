@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
   Select,
@@ -30,7 +29,6 @@ export function RoleSelect({
   // cheaper and less error-prone than syncing with an effect.
   const [value, setValue] = React.useState<Role>(role)
   const [pending, startTransition] = React.useTransition()
-  const router = useRouter()
 
   function onChange(next: string) {
     const previous = value
@@ -42,7 +40,6 @@ export function RoleSelect({
       const result = await setUserRole(formData)
       if (result.ok) {
         toast.success(`Role updated to ${ROLE_LABELS[next as Role]}.`)
-        router.refresh()
       } else {
         setValue(previous) // roll the optimistic change back
         toast.error(result.error)

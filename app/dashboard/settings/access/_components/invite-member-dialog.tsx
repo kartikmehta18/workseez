@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { UserPlus } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -29,7 +28,6 @@ import { inviteTeamMember } from "../actions"
 export function InviteMemberDialog({ canGrantAdmin }: { canGrantAdmin: boolean }) {
   const [open, setOpen] = React.useState(false)
   const [pending, startTransition] = React.useTransition()
-  const router = useRouter()
 
   function onSubmit(formData: FormData) {
     startTransition(async () => {
@@ -41,7 +39,6 @@ export function InviteMemberDialog({ canGrantAdmin }: { canGrantAdmin: boolean }
             : "Invited, but the email couldn't be sent — send them the portal link yourself.",
         )
         setOpen(false)
-        router.refresh()
       } else {
         toast.error(result.error)
       }
