@@ -17,11 +17,20 @@ import {
 import { isSuperAdminEmail, ROLE_LABELS, ROLES, type Role } from "@/lib/rbac"
 import { cn } from "@/lib/utils"
 import { InviteStatusBadge, RoleBadge } from "../../../_components/status-badges"
+import { GenerateKeyButton, ViewKeyButton } from "../../../_components/generate-key-button"
 import type { TeamMember } from "../actions"
 import { RoleSelect } from "./role-select"
 import { StatusToggle } from "./status-toggle"
 
 type RoleFilter = Role | "ALL"
+
+/**
+ * "20 Aug 2026" rather than the locale default. `toLocaleDateString()` renders
+ * "8/20/2026", which is both ambiguous across locales and just wide enough to
+ * wrap inside the Access column.
+ */
+const shortDate = (date: Date) =>
+  date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
 
 /**
  * Filtering happens on the client over the already-loaded list. The whole team
@@ -33,11 +42,13 @@ export function UserDirectory({
   actorId,
   canSetRole,
   canDisable,
+  canResetKey,
 }: {
   users: TeamMember[]
   actorId: string
   canSetRole: boolean
   canDisable: boolean
+  canResetKey: boolean
 }) {
   const [query, setQuery] = React.useState("")
   const [role, setRole] = React.useState<RoleFilter>("ALL")
@@ -167,10 +178,12 @@ export function UserDirectory({
               <TableHeader>
                 <TableRow>
                   <TableHead>Person</TableHead>
-                  <TableHead>Access</TableHead>
-                  <TableHead>Scope</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead className="w-0" />
+                  <TableHead className="whitespace-nowrap">Access</TableHead>
+                  <TableHead className="whitespace-nowrap">Scope</TableHead>
+                  <TableHead className="whitespace-nowrap">Role</TableHead>
+                  {/* w-0 plus nowrap contents: the column shrinks to exactly the
+                      buttons and every other column keeps the slack. */}
+                  <TableHead className="w-0 text-right whitespace-nowrap">Access key</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -179,8 +192,13 @@ export function UserDirectory({
                   const isSelf = user.id === actorId
                   return (
                     <TableRow key={user.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
+                      <TableCell className="align-middle">
+                        {/* Capped, so a long address like
+                            2022pietcakartik029@poornima.org ellipsises instead
+                            of setting the width of the whole table — `truncate`
+                            alone does nothing in an auto-layout table, which
+                            sizes each column to its widest content. */}
+                        <div className="flex max-w-[260px] items-center gap-3">
                           <Avatar className="size-8 shrink-0">
                             {user.avatarUrl ? <AvatarImage src={user.avatarUrl} alt="" /> : null}
                             <AvatarFallback>
@@ -200,13 +218,22 @@ export function UserDirectory({
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-middle">
                         <InviteStatusBadge status={user.status} />
+                        {/* nowrap and short: "Key issued 8/20/2026" wrapped to a
+                            second line and pushed the badge off the row's centre
+                            line, and the longer wording widened the table. */}
+                        <div className="text-muted-foreground mt-1 text-xs whitespace-nowrap">
+                          {user.accessKeySetAt ? `Key · ${shortDate(user.accessKeySetAt)}` : "No key"}
+                        </div>
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
+                      {/* Free to wrap. Pinned to one line it was the column that
+                          pushed the table past the page and produced the
+                          horizontal scrollbar. */}
+                      <TableCell className="text-muted-foreground align-middle text-sm">
                         {scopeFor(user)}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-middle">
                         {canSetRole && !isOwner ? (
                           <RoleSelect
                             key={user.role}
@@ -219,10 +246,30 @@ export function UserDirectory({
                           <RoleBadge role={user.role} />
                         )}
                       </TableCell>
-                      <TableCell>
-                        {canDisable && !isOwner && !isSelf ? (
-                          <StatusToggle userId={user.id} status={user.status} />
-                        ) : null}
+                      <TableCell className="align-middle">
+                        <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                          {/* Icons here, words in the mobile cards below: the
+                              labelled pair cost roughly 180px this row does not
+                              have. Both carry a tooltip and an accessible name. */}
+                          {canResetKey && user.accessKeySetAt ? (
+                            <ViewKeyButton
+                              target={{ kind: "user", id: user.id }}
+                              description={user.email}
+                              iconOnly
+                            />
+                          ) : null}
+                          {canResetKey && user.status !== "DISABLED" ? (
+                            <GenerateKeyButton
+                              target={{ kind: "user", id: user.id }}
+                              label={user.accessKeySetAt ? "Send a new key" : "Give an access key"}
+                              description={user.email}
+                              iconOnly
+                            />
+                          ) : null}
+                          {canDisable && !isOwner && !isSelf ? (
+                            <StatusToggle userId={user.id} status={user.status} />
+                          ) : null}
+                        </div>
                       </TableCell>
                     </TableRow>
                   )
@@ -260,9 +307,29 @@ export function UserDirectory({
                       </div>
 
                       <p className="text-muted-foreground mt-2 text-xs">{scopeFor(user)}</p>
+                      <p className="text-muted-foreground mt-1 text-xs">
+                        {user.accessKeySetAt
+                          ? `Key issued ${shortDate(user.accessKeySetAt)}`
+                          : "No access key"}
+                      </p>
 
-                      {(canSetRole && !isOwner) || (canDisable && !isOwner && !isSelf) ? (
+                      {(canSetRole && !isOwner) ||
+                      (canDisable && !isOwner && !isSelf) ||
+                      (canResetKey && user.status !== "DISABLED") ? (
                         <div className="mt-3 flex flex-wrap items-center gap-2">
+                          {canResetKey && user.accessKeySetAt ? (
+                            <ViewKeyButton
+                              target={{ kind: "user", id: user.id }}
+                              description={user.email}
+                            />
+                          ) : null}
+                          {canResetKey && user.status !== "DISABLED" ? (
+                            <GenerateKeyButton
+                              target={{ kind: "user", id: user.id }}
+                              label={user.accessKeySetAt ? "New key" : "Give key"}
+                              description={user.email}
+                            />
+                          ) : null}
                           {canSetRole && !isOwner ? (
                             <RoleSelect
                               key={user.role}

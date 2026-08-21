@@ -68,7 +68,18 @@ export const getVisibleClient = cache(async function getVisibleClient(
   return prisma.client.findFirst({
     where: { AND: [{ id: clientId }, clientScopeFor(actor)] },
     include: {
-      owner: { select: { id: true, email: true, name: true, status: true, avatarUrl: true } },
+      owner: {
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          status: true,
+          avatarUrl: true,
+          // Whether they have a 6-digit key, and since when. Never the key or
+          // its hash — the profile page only reports that one exists.
+          accessKeySetAt: true,
+        },
+      },
       createdBy: { select: { name: true, email: true } },
       managers: { include: { user: { select: { id: true, name: true, email: true, role: true } } } },
       links: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },

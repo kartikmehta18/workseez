@@ -49,13 +49,17 @@ export function RoleSelect({
 
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled || pending}>
-      <SelectTrigger className="w-[240px]" title={disabled ? disabledReason : undefined}>
-        <SelectValue />
+      <SelectTrigger className="w-[150px]" title={disabled ? disabledReason : undefined}>
+        {/* The label alone, spelled out rather than left to SelectValue. Left to
+            itself it mirrors the whole chosen item — label *and* description —
+            and those two stacked lines spill out of a one-line trigger. The
+            description still does its job where it belongs, in the list. */}
+        <SelectValue>{ROLE_LABELS[value]}</SelectValue>
       </SelectTrigger>
       <SelectContent>
         {ROLES.map((r) => (
           <SelectItem key={r} value={r} disabled={r === "SUPER_ADMIN"}>
-            <span className="flex flex-col items-start ">
+            <span className="flex flex-col items-start">
               <span>{ROLE_LABELS[r]}</span>
               <span className="text-muted-foreground text-xs">{ROLE_DESCRIPTIONS[r]}</span>
             </span>

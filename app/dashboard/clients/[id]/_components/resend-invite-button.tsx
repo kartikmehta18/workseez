@@ -16,7 +16,15 @@ export function ResendInviteButton({ clientId }: { clientId: string }) {
       formData.set("id", clientId)
       const result = await resendClientInvite(formData)
       if (result.ok) {
-        toast.success("Invite email sent again.")
+        // A resend carries a *new* key — the old one exists only as a hash, so
+        // there is nothing to repeat — and the admin sees it here in case they
+        // want to read it out rather than wait on the mail.
+        toast.success("Invite email sent again, with a new access key.", {
+          description: result.accessKey
+            ? `Access key ${result.accessKey} — the only time it is shown.`
+            : undefined,
+          duration: 8000,
+        })
       } else {
         toast.error(result.error)
       }

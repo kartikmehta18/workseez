@@ -1,15 +1,31 @@
 import Link from "next/link"
-import { redirect } from "next/navigation"
-import { Database, ShieldCheck, UserCog } from "lucide-react"
+import { Database, KeyRound, ShieldCheck, UserCog } from "lucide-react"
+import { prisma } from "@/lib/db"
 import { requireActor } from "@/lib/auth"
-import { can, isTeamRole, ROLE_LABELS } from "@/lib/rbac"
+import { can, ROLE_LABELS } from "@/lib/rbac"
 import { Badge } from "@/components/ui/badge"
+import {
+  GenerateKeyButton,
+  RequestKeyButton,
+  ViewKeyButton,
+} from "../_components/generate-key-button"
 
 export const metadata = { title: "Settings — Workseez" }
 
+// Open to every role, clients included: this is where anyone regenerates their
+// own access key, and having to ask an admin for that would defeat the point of
+// a sign-in method that exists for people Google doesn't work for. Every
+// section below is still gated on what the actor may actually see.
 export default async function SettingsPage() {
   const actor = await requireActor()
-  if (!isTeamRole(actor.role)) redirect("/dashboard")
+
+  const account = await prisma.user.findUnique({
+    where: { id: actor.id },
+    select: { accessKeySetAt: true },
+  })
+
+  // Admins and the Super Admin re-key themselves; a manager or client asks.
+  const canIssueKeys = can(actor, "user:resetKey")
 
   return (
     <div className="mx-auto w-full max-w-3xl">
@@ -31,6 +47,57 @@ export default async function SettingsPage() {
         <p className="text-muted-foreground mt-4 text-xs">
           Name and photo come from your Google account and refresh on each sign-in.
         </p>
+      </section>
+
+      <section className="mt-4 rounded-lg border p-5">
+        <h2 className="flex items-center gap-2 font-medium">
+          <KeyRound className="size-4" /> Your access key
+        </h2>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Six digits that sign you in on their own — the way in when Google isn&apos;t an
+          option on this address.
+        </p>
+
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {account?.accessKeySetAt ? (
+              <ViewKeyButton
+                target={{ kind: "self" }}
+                label="Show my key"
+                description="your own account"
+                size="default"
+              />
+            ) : null}
+
+            {/* Issuing a key *is* granting access, so it stays with the roles
+                that may grant it. Everyone else asks, and an admin sends one. */}
+            {canIssueKeys ? (
+              <GenerateKeyButton
+                target={{ kind: "self" }}
+                label={account?.accessKeySetAt ? "Generate a new key" : "Generate my key"}
+                description="your own account"
+                size="default"
+              />
+            ) : (
+              <RequestKeyButton
+                label={account?.accessKeySetAt ? "Request a new key" : "Request an access key"}
+                size="default"
+              />
+            )}
+          </div>
+          <p className="text-muted-foreground text-xs">
+            {account?.accessKeySetAt
+              ? `Issued ${account.accessKeySetAt.toLocaleDateString("en-GB", {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                })}.`
+              : "You don't have one yet."}{" "}
+            {canIssueKeys
+              ? `A new key replaces it and is emailed to ${actor.email}.`
+              : `Only an Admin can issue keys — asking sends them a note, and the new key arrives at ${actor.email}.`}
+          </p>
+        </div>
       </section>
 
       {can(actor, "user:viewAll") ? (

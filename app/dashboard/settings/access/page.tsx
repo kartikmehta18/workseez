@@ -15,6 +15,7 @@ export default async function UserAccessPage() {
   const users = await listAllUsers()
   const canSetRole = can(actor, "user:setRole")
   const canDisable = can(actor, "user:disable")
+  const canResetKey = can(actor, "user:resetKey")
 
   return (
     <div className="mx-auto w-full max-w-6xl">
@@ -42,6 +43,7 @@ export default async function UserAccessPage() {
         actorId={actor.id}
         canSetRole={canSetRole}
         canDisable={canDisable}
+        canResetKey={canResetKey}
       />
 
       <div className="mt-8 rounded-lg border p-5">

@@ -1,0 +1,14 @@
+-- Lets an admin look a key up again rather than only seeing it the once.
+--
+-- A hash cannot be read back, so showing an existing key means keeping it in a
+-- reversible form: AES-256-GCM under a key derived from AUTH_SECRET. That is a
+-- deliberate step down from hash-only — whoever holds both the database and the
+-- secret can read every key — taken so the portal can tell an admin which
+-- digits their client is asking about.
+--
+-- The sign-in path does NOT consult this column: verification still runs
+-- against accessKeyHash, so a tampered ciphertext cannot let anyone in.
+--
+-- Keys issued before this migration have no ciphertext and stay unreadable.
+-- They keep working; showing one means generating a replacement.
+ALTER TABLE `User` ADD COLUMN `accessKeyCipher` VARCHAR(191) NULL;

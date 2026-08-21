@@ -44,6 +44,10 @@ function navFor(role: Actor["role"]): { main: NavItem[]; admin: NavItem[] } {
         { href: "/dashboard/onboarding", label: "Onboarding Form", icon: ClipboardList },
         { href: "/dashboard/strategy", label: "Strategy Sheet", icon: Target },
         { href: "/dashboard/content", label: "Content Calendar", icon: CalendarDays },
+        // Settings is where anyone — client included — regenerates their own
+        // 6-digit access key, so it is no longer team-only. It sits in the
+        // workspace group: "Administration" would be a lie on a client's nav.
+        { href: "/dashboard/settings", label: "Settings", icon: Settings },
       ],
       admin: [],
     }
@@ -67,6 +71,12 @@ function navFor(role: Actor["role"]): { main: NavItem[]; admin: NavItem[] } {
       : role === "ADMIN"
         ? [{ href: "/dashboard/settings", label: "Settings", icon: Settings }]
         : []
+
+  // A manager has no administration group at all, but still needs Settings for
+  // their own account and access key — so it joins their workspace list.
+  if (admin.length === 0) {
+    main.push({ href: "/dashboard/settings", label: "Settings", icon: Settings })
+  }
 
   return { main, admin }
 }

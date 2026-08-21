@@ -1,11 +1,11 @@
 import Link from "next/link"
 import { redirect } from "next/navigation"
-import { Briefcase } from "lucide-react"
 import { getCurrentActor } from "@/lib/auth"
 import { safeNextPath } from "@/lib/session"
 import { GoogleIcon } from "@/components/ui/google-icon"
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
+import { AccessKeyForm } from "./_components/access-key-form"
 export const metadata = {
   title: "Sign in — Workseez",
 }
@@ -65,9 +65,20 @@ export default async function LoginPage({
             </p>
           ) : null}
 
+          {/* Two ways in, both landing on the same session cookie: the key for
+              people with no Google account on this address, Google for the
+              rest. Neither is a fallback for the other. */}
+          <AccessKeyForm next={target} />
+
+          <div className="my-6 flex items-center gap-3">
+            <span className="bg-border h-px flex-1" />
+            <span className="text-muted-foreground text-xs">or</span>
+            <span className="bg-border h-px flex-1" />
+          </div>
+
           <a
             href={signInHref}
-            className="mt-6 flex h-11 w-full items-center justify-center gap-3 rounded-md border border-input bg-background text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            className="flex h-11 w-full items-center justify-center gap-3 rounded-md border border-input bg-background text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
             <GoogleIcon className="size-5" />
             Continue with Google

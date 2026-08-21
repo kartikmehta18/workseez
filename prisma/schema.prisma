@@ -26,6 +26,25 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // The 6-digit access key — the sign-in method for people without a Google
+  // account on this address. See lib/access-key.ts for the full reasoning.
+  //   accessKeyHash        scrypt hash with a per-user salt; the key itself is
+  //                        never stored.
+  //   accessKeyFingerprint deterministic HMAC of the key. Does two jobs a
+  //                        salted hash cannot: it is the lookup for a sign-in
+  //                        (the key alone identifies the account) and, being
+  //                        UNIQUE, it is what makes the key unique across the
+  //                        whole workspace.
+  //   accessKeyCipher      the same key, AES-256-GCM encrypted, so an admin can
+  //                        look it up again instead of only ever seeing it once.
+  //                        Never consulted when signing in — that still runs
+  //                        against the hash — and only read by the roles holding
+  //                        user:resetKey.
+  accessKeyHash        String?
+  accessKeyFingerprint String?   @unique
+  accessKeyCipher      String?
+  accessKeySetAt       DateTime?
+
   ownedClient    Client?         @relation("ClientOwner")
   createdClients Client[]        @relation("ClientCreator")
   managedClients ClientManager[]

@@ -53,8 +53,16 @@ export function EditClientDialog({ client }: { client: ClientFields }) {
           result.emailed === false
             ? "Client updated, but the invite email to the new address couldn't be sent."
             : result.emailed
-              ? "Client updated. A new invite was emailed to the updated address."
+              ? "Client updated. A new invite and access key went to the updated address."
               : "Client updated.",
+          {
+            // Changing the login email re-keys the account — the old key was
+            // mailed to an address that is no longer the owner's.
+            description: result.accessKey
+              ? `New access key ${result.accessKey} — the only time it is shown.`
+              : undefined,
+            duration: result.accessKey && result.emailed === false ? 60000 : 8000,
+          },
         )
         setOpen(false)
       } else {
@@ -76,23 +84,25 @@ export function EditClientDialog({ client }: { client: ClientFields }) {
           <Pencil /> Edit
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-lg">
+      {/* Wide and two-column, like the add dialog: one column of these fields
+          overflowed the panel and turned it into a scrolling box. */}
+      <DialogContent className="sm:max-w-3xl">
         <form action={onSubmit}>
           <input type="hidden" name="id" value={client.id} />
           <DialogHeader>
             <DialogTitle>Edit client</DialogTitle>
           </DialogHeader>
 
-          <div className="grid gap-4 py-5">
-            <div className="grid gap-2">
+          <div className="grid gap-4 py-5 sm:grid-cols-2">
+            <div className="grid content-start gap-2">
               <Label htmlFor="edit-name">Client name</Label>
               <Input id="edit-name" name="name" defaultValue={client.name} required />
             </div>
-            <div className="grid gap-2">
+            <div className="grid content-start gap-2">
               <Label htmlFor="edit-company">Company</Label>
               <Input id="edit-company" name="company" defaultValue={client.company ?? ""} />
             </div>
-            <div className="grid gap-2">
+            <div className="grid content-start gap-2">
               <Label htmlFor="edit-email">Login email</Label>
               <Input
                 id="edit-email"
@@ -115,7 +125,7 @@ export function EditClientDialog({ client }: { client: ClientFields }) {
                 </p>
               )}
             </div>
-            <div className="grid gap-2">
+            <div className="grid content-start gap-2">
               <Label htmlFor="edit-status">Status</Label>
               <Select name="status" defaultValue={client.status}>
                 <SelectTrigger id="edit-status">
@@ -130,7 +140,7 @@ export function EditClientDialog({ client }: { client: ClientFields }) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid gap-2">
+            <div className="grid content-start gap-2 sm:col-span-2">
               <Label htmlFor="edit-drive">Google Drive folder</Label>
               <Input
                 id="edit-drive"
@@ -145,11 +155,13 @@ export function EditClientDialog({ client }: { client: ClientFields }) {
               </p>
             </div>
 
-            <ClientLinkFields initial={client.links} />
+            <div className="sm:col-span-2">
+              <ClientLinkFields initial={client.links} />
+            </div>
 
-            <div className="grid gap-2">
+            <div className="grid content-start gap-2 sm:col-span-2">
               <Label htmlFor="edit-notes">Notes</Label>
-              <Textarea id="edit-notes" name="notes" rows={3} defaultValue={client.notes ?? ""} />
+              <Textarea id="edit-notes" name="notes" rows={2} defaultValue={client.notes ?? ""} />
             </div>
           </div>
 
