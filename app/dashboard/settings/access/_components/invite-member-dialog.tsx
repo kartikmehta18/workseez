@@ -22,12 +22,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { ROLE_DESCRIPTIONS, ROLE_LABELS } from "@/lib/rbac"
+import { ROLE_DESCRIPTIONS, ROLE_LABELS, type Role } from "@/lib/rbac"
 import { inviteTeamMember } from "../actions"
+import { AccessKeyField } from "../../../_components/access-key-field"
 
 export function InviteMemberDialog({ canGrantAdmin }: { canGrantAdmin: boolean }) {
   const [open, setOpen] = React.useState(false)
   const [pending, startTransition] = React.useTransition()
+  // Tracked so the trigger can show the role's label on its own line — see the
+  // note on SelectValue below.
+  const [role, setRole] = React.useState<Role>("MANAGER")
 
   function onSubmit(formData: FormData) {
     startTransition(async () => {
@@ -35,8 +39,14 @@ export function InviteMemberDialog({ canGrantAdmin }: { canGrantAdmin: boolean }
       if (result.ok) {
         toast.success(
           result.emailed
-            ? "Invite sent. They get access on their first Google sign-in."
-            : "Invited, but the email couldn't be sent — send them the portal link yourself.",
+            ? "Invite sent, with their access key."
+            : "Invited, but the email couldn't be sent — send them the key below yourself.",
+          {
+            description: result.accessKey
+              ? `Access key ${result.accessKey} — the only time it is shown.`
+              : undefined,
+            duration: result.emailed ? 8000 : 60000,
+          },
         )
         setOpen(false)
       } else {
@@ -52,22 +62,24 @@ export function InviteMemberDialog({ canGrantAdmin }: { canGrantAdmin: boolean }
           <UserPlus /> Invite member
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-xl">
         <form action={onSubmit}>
           <DialogHeader>
             <DialogTitle>Invite a team member</DialogTitle>
             <DialogDescription>
-              Use the Google account they will sign in with. We'll email them an invite with a
-              link to sign in.
+              Use the Google account they will sign in with. The invite also carries a 6-digit
+              access key, which signs them in without Google.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-5">
-            <div className="grid gap-2">
+          {/* Paired columns so the four fields sit in two rows — the panel then
+              fits on a laptop screen without scrolling. */}
+          <div className="grid gap-4 py-5 sm:grid-cols-2">
+            <div className="grid content-start gap-2">
               <Label htmlFor="invite-name">Name</Label>
               <Input id="invite-name" name="name" placeholder="Kartik Mehta" />
             </div>
-            <div className="grid gap-2">
+            <div className="grid content-start gap-2">
               <Label htmlFor="invite-email">Google email</Label>
               <Input
                 id="invite-email"
@@ -77,11 +89,19 @@ export function InviteMemberDialog({ canGrantAdmin }: { canGrantAdmin: boolean }
                 required
               />
             </div>
-            <div className="grid gap-2">
+            <AccessKeyField id="invite-key" hint="Emailed with the invite." />
+            <div className="grid content-start gap-2">
               <Label htmlFor="invite-role">Role</Label>
-              <Select name="role" defaultValue="MANAGER">
+              <Select
+                name="role"
+                value={role}
+                onValueChange={(next) => setRole(next as Role)}
+              >
                 <SelectTrigger id="invite-role">
-                  <SelectValue />
+                  {/* The label only. SelectValue left empty mirrors the whole
+                      chosen item, and the description under it overflows a
+                      one-line trigger. */}
+                  <SelectValue>{ROLE_LABELS[role]}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="MANAGER">

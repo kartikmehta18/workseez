@@ -3,12 +3,19 @@
 import { refresh, revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { getCurrentActor } from "@/lib/auth"
-import { sendClientInviteEmail } from "@/lib/emails"
+import { issueAccessKey, revealAccessKey, validateChosenAccessKey } from "@/lib/access-key"
+import { sendAccessKeyEmail, sendClientInviteEmail } from "@/lib/emails"
 import { assertCan, CLIENT_STATUSES, ForbiddenError, isSuperAdminEmail } from "@/lib/rbac"
 import { labelFromUrl, MAX_CLIENT_LINKS, normalizeUrl } from "@/lib/links"
 
-/** `emailed` is false when SMTP is unset or the send failed — the client is created either way. */
-export type ActionResult = { ok: true; emailed?: boolean } | { ok: false; error: string }
+/**
+ * `emailed` is false when SMTP is unset or the send failed — the client is
+ * created either way. `accessKey` is the plaintext 6-digit key, handed back so
+ * the UI can show it once; nothing can read it after that.
+ */
+export type ActionResult =
+  | { ok: true; emailed?: boolean; accessKey?: string }
+  | { ok: false; error: string }
 
 function fail(error: string): ActionResult {
   return { ok: false, error }
@@ -93,7 +100,14 @@ export async function createClient(formData: FormData): Promise<ActionResult> {
   const links = parseLinks(formData)
   if (!Array.isArray(links)) return fail(links.error)
 
-  await prisma.client.create({
+  // The admin may set the client's 6-digit key themselves; blank draws one.
+  // Checked before anything is written so a taken key fails on the open form.
+  const chosenKey = String(formData.get("accessKey") ?? "").trim() || null
+  const keyProblem = chosenKey ? await validateChosenAccessKey(chosenKey) : null
+  if (keyProblem) return fail(keyProblem)
+
+  const created = await prisma.client.create({
+    select: { ownerUserId: true },
     data: {
       name,
       company: company || null,
@@ -109,6 +123,15 @@ export async function createClient(formData: FormData): Promise<ActionResult> {
     },
   })
 
+  // The key rides along in the invite, so a client with no Google account on
+  // this address still has a way in. A key that can't be issued is logged and
+  // skipped rather than failing the client — the invite then describes Google
+  // sign-in alone, and "Send new key" fixes it afterwards.
+  const issued = created.ownerUserId
+    ? await issueAccessKey(created.ownerUserId, { key: chosenKey })
+    : ({ ok: false, error: "client has no owner account" } as const)
+  if (!issued.ok) console.error(`[access-key] new client ${email}: ${issued.error}`)
+
   // Access comes from the account row, not the mail, so a send failure is
   // reported to the admin rather than failing the whole creation.
   const emailed = await sendClientInviteEmail({
@@ -116,11 +139,12 @@ export async function createClient(formData: FormData): Promise<ActionResult> {
     name,
     company: company || null,
     invitedBy: actor.name ?? actor.email,
+    accessKey: issued.ok ? issued.key : null,
   })
 
   revalidatePath("/dashboard/clients")
   refresh()
-  return { ok: true, emailed }
+  return { ok: true, emailed, accessKey: issued.ok ? issued.key : undefined }
 }
 
 export async function updateClient(formData: FormData): Promise<ActionResult> {
@@ -199,27 +223,38 @@ export async function updateClient(formData: FormData): Promise<ActionResult> {
       : []),
   ])
 
-  // A changed email is effectively a fresh invitation, so notify the new address.
+  // A changed email is effectively a fresh invitation, so notify the new
+  // address — and re-key the account. The old key was mailed to the previous
+  // address, and that person is no longer the owner of this profile.
   let emailed: boolean | undefined
-  if (emailChanged) {
+  let accessKey: string | undefined
+  if (emailChanged && owner) {
+    const issued = await issueAccessKey(owner.id)
+    if (issued.ok) accessKey = issued.key
+    else console.error(`[access-key] re-key for ${email}: ${issued.error}`)
+
     emailed = await sendClientInviteEmail({
       to: email,
       name,
       company: company || null,
       invitedBy: actor.name ?? actor.email,
+      accessKey: accessKey ?? null,
     })
   }
 
   revalidatePath("/dashboard/clients")
   revalidatePath(`/dashboard/clients/${id}`)
   refresh()
-  return { ok: true, emailed }
+  return { ok: true, emailed, accessKey }
 }
 
 /**
  * Resends the portal invite to a client who hasn't signed in yet. Only makes
  * sense while their account is still INVITED — once ACTIVE they already have
  * access and there is nothing to resend.
+ *
+ * It issues a *new* key rather than repeating the old one: the key exists only
+ * as a hash from the moment it is mailed, so there is nothing to repeat.
  */
 export async function resendClientInvite(formData: FormData): Promise<ActionResult> {
   const actor = await getCurrentActor()
@@ -237,22 +272,108 @@ export async function resendClientInvite(formData: FormData): Promise<ActionResu
     where: { id },
     select: {
       company: true,
-      owner: { select: { email: true, name: true, status: true } },
+      owner: { select: { id: true, email: true, name: true, status: true } },
     },
   })
   if (!client?.owner) return fail("This client has no login account.")
   if (client.owner.status === "ACTIVE") return fail("This client has already signed in.")
   if (client.owner.status === "DISABLED") return fail("This client's account is disabled.")
 
+  const issued = await issueAccessKey(client.owner.id)
+  if (!issued.ok) return fail(issued.error)
+
   const emailed = await sendClientInviteEmail({
     to: client.owner.email,
     name: client.owner.name,
     company: client.company,
     invitedBy: actor.name ?? actor.email,
+    accessKey: issued.key,
   })
 
-  if (!emailed) return fail("Couldn't send the email. Check the mail settings and try again.")
-  return { ok: true, emailed }
+  // Unlike the create path there is no record to fall back on here — a resend
+  // that didn't send did nothing at all, so it is reported as a failure. The
+  // new key still stands, and the admin can read it off the client page.
+  if (!emailed) {
+    revalidatePath(`/dashboard/clients/${id}`)
+    return fail("Couldn't send the email. Check the mail settings and try again.")
+  }
+
+  revalidatePath(`/dashboard/clients/${id}`)
+  refresh()
+  return { ok: true, emailed, accessKey: issued.key }
+}
+
+/**
+ * Generates a fresh key for a client and emails it. The client-page twin of
+ * regenerateAccessKey in settings/access — same permission, but reached from
+ * where an account manager actually works.
+ */
+export async function regenerateClientAccessKey(formData: FormData): Promise<ActionResult> {
+  const actor = await getCurrentActor()
+  try {
+    assertCan(actor, "user:resetKey")
+  } catch (error) {
+    if (error instanceof ForbiddenError) {
+      return fail("You don't have permission to generate access keys.")
+    }
+    throw error
+  }
+
+  const id = String(formData.get("id") ?? "")
+  if (!id) return fail("Missing client.")
+
+  const client = await prisma.client.findUnique({
+    where: { id },
+    select: { owner: { select: { id: true, email: true, name: true, status: true } } },
+  })
+  if (!client?.owner) return fail("This client has no login account.")
+  if (client.owner.status === "DISABLED") return fail("This client's account is disabled.")
+
+  const issued = await issueAccessKey(client.owner.id, {
+    key: String(formData.get("accessKey") ?? "").trim() || null,
+  })
+  if (!issued.ok) return fail(issued.error)
+
+  const emailed = await sendAccessKeyEmail({
+    to: client.owner.email,
+    name: client.owner.name,
+    accessKey: issued.key,
+    issuedBy: actor.name ?? actor.email,
+  })
+
+  revalidatePath(`/dashboard/clients/${id}`)
+  refresh()
+  return { ok: true, emailed, accessKey: issued.key }
+}
+
+/**
+ * Shows the key this client already holds — the answer to "what did we send
+ * them?", which used to cost them a working key to find out.
+ */
+export async function showClientAccessKey(formData: FormData): Promise<ActionResult> {
+  const actor = await getCurrentActor()
+  try {
+    assertCan(actor, "user:resetKey")
+  } catch (error) {
+    if (error instanceof ForbiddenError) {
+      return fail("You don't have permission to view access keys.")
+    }
+    throw error
+  }
+
+  const id = String(formData.get("id") ?? "")
+  if (!id) return fail("Missing client.")
+
+  const client = await prisma.client.findUnique({
+    where: { id },
+    select: { owner: { select: { id: true } } },
+  })
+  if (!client?.owner) return fail("This client has no login account.")
+
+  const { key } = await revealAccessKey(client.owner.id)
+  if (!key) return fail("No readable key on this account. Generate a new one to see it.")
+
+  return { ok: true, accessKey: key }
 }
 
 /** Assign or unassign a team member as a manager of a client. */

@@ -24,6 +24,7 @@ import { DriveButton, SocialLinkList } from "../_components/client-links"
 import { EditClientDialog } from "./_components/edit-client-dialog"
 import { ManagerAssignment } from "./_components/manager-assignment"
 import { ResendInviteButton } from "./_components/resend-invite-button"
+import { GenerateKeyButton, ViewKeyButton } from "../../_components/generate-key-button"
 
 /**
  * The page's own `getVisibleClient` is memoised per request, so reusing it here
@@ -50,6 +51,7 @@ export default async function ClientProfilePage({ params }: { params: Promise<{ 
 
   const canEdit = can(actor, "client:edit")
   const canAssign = can(actor, "client:assignManager")
+  const canResetKey = can(actor, "user:resetKey")
   // One wave, not four. These reads have nothing to do with each other — the
   // questionnaire, the strategy sheet, the calendar and the assignable team
   // are four independent rows — but awaiting them in sequence meant four
@@ -178,16 +180,45 @@ export default async function ClientProfilePage({ params }: { params: Promise<{ 
             <dd>
               <InviteStatusBadge status={client.owner?.status ?? "INVITED"} />
             </dd>
+            <dt className="text-muted-foreground">Access key</dt>
+            <dd>
+              {client.owner?.accessKeySetAt
+                ? `Issued ${client.owner.accessKeySetAt.toLocaleDateString()}`
+                : "Not set"}
+            </dd>
             <dt className="text-muted-foreground">Added by</dt>
             <dd>{client.createdBy?.name ?? client.createdBy?.email ?? "—"}</dd>
             <dt className="text-muted-foreground">Created</dt>
             <dd>{client.createdAt.toLocaleDateString()}</dd>
           </dl>
+          {canResetKey && client.owner ? (
+            <div className="mt-4 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {client.owner.accessKeySetAt ? (
+                  <ViewKeyButton
+                    target={{ kind: "client", id: client.id }}
+                    description={client.owner.email}
+                  />
+                ) : null}
+                <GenerateKeyButton
+                  target={{ kind: "client", id: client.id }}
+                  label={client.owner.accessKeySetAt ? "Send new key" : "Generate key"}
+                  description={client.owner.email}
+                />
+              </div>
+              <p className="text-muted-foreground text-xs">
+                A 6-digit key signs them in without Google. View shows the one they have now;
+                generating a new one retires it.
+              </p>
+            </div>
+          ) : null}
+
           {client.owner?.status === "INVITED" ? (
             <div className="bg-muted mt-4 rounded-md p-3">
               <p className="text-muted-foreground text-xs">
-                This client hasn&apos;t signed in yet. They get access the first time they sign in
-                with Google using exactly {client.owner.email}.
+                This client hasn&apos;t signed in yet. They get in either by signing in with
+                Google as exactly {client.owner.email}, or with the 6-digit key from their
+                invite email.
               </p>
               {canEdit ? (
                 <div className="mt-3">

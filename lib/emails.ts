@@ -21,6 +21,8 @@ type Layout = {
   body: string[]
   /** Optional label/value rows — the post's date, status and so on. */
   details?: { label: string; value: string }[]
+  /** The 6-digit access key, set apart so it reads at a glance on a phone. */
+  code?: { label: string; value: string }
   buttonLabel: string
   buttonHref: string
   /** Small print under the button, e.g. which account to sign in with. */
@@ -41,6 +43,7 @@ function renderLayout({
   heading,
   body,
   details,
+  code,
   buttonLabel,
   buttonHref,
   footnote,
@@ -69,6 +72,19 @@ function renderLayout({
             .join("")}
         </table>`
       : ""
+
+  // The key gets its own panel, wide-tracked and large: people read it off one
+  // screen and type it into another, so it has to survive a glance.
+  const codeBlock = code
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:4px 0 20px;border:1px solid ${BORDER};border-radius:8px;background-color:#f9fafb;">
+        <tr>
+          <td align="center" style="padding:18px 14px 20px;">
+            <div style="font-family:${FONT};font-size:12px;line-height:18px;letter-spacing:0.6px;text-transform:uppercase;color:${MUTED};">${escapeHtml(code.label)}</div>
+            <div style="margin-top:8px;font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:34px;line-height:42px;font-weight:700;letter-spacing:8px;color:${NAVY};">${escapeHtml(code.value)}</div>
+          </td>
+        </tr>
+      </table>`
+    : ""
 
   return `<!doctype html>
 <html lang="en">
@@ -100,6 +116,7 @@ function renderLayout({
               <td style="background-color:#ffffff;border:1px solid ${BORDER};border-top:0;border-radius:0 0 12px 12px;padding:36px 32px 32px;">
                 <h1 style="margin:0 0 18px;font-family:${FONT};font-size:22px;line-height:30px;font-weight:600;color:#0f172a;">${escapeHtml(heading)}</h1>
                 ${paragraphs}
+                ${codeBlock}
                 ${detailRows}
 
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0 4px;">
@@ -147,7 +164,30 @@ type InviteInput = {
   name?: string | null
   /** The admin or manager who created the account. */
   invitedBy?: string | null
+  /**
+   * The 6-digit key issued with the invite. Omitted only when issuing it failed
+   * — the mail then describes Google sign-in alone rather than a missing key.
+   */
+  accessKey?: string | null
 }
+
+/** The two-ways-in paragraph every invite ends with. */
+const signInOptionsHtml = (to: string, accessKey?: string | null) =>
+  accessKey
+    ? `Two ways in, whichever suits you: type the 6-digit key above on the sign-in page — that alone signs you in, no Google account needed — or <strong>Continue with Google</strong> using <strong>${escapeHtml(to)}</strong>.`
+    : `Sign in with Google using <strong>${escapeHtml(to)}</strong> — access is tied to that address.`
+
+const signInOptionsText = (to: string, accessKey?: string | null) =>
+  accessKey
+    ? [
+        `Your access key: ${accessKey}`,
+        "",
+        `Two ways in: type that 6-digit key on the sign-in page — it signs you in on its own — or continue with Google using ${to}.`,
+      ]
+    : [`Use Google sign-in with ${to} — access is tied to that address.`]
+
+const KEY_SAFETY_NOTE =
+  "Keep the key to yourself — anyone with it and your email address can open your portal. You can have a new one sent at any time."
 
 const greeting = (name?: string | null) => {
   const first = name?.trim().split(/\s+/)[0]
@@ -163,6 +203,7 @@ export async function sendTeamInviteEmail({
   name,
   invitedBy,
   role,
+  accessKey,
 }: InviteInput & { role: Role }) {
   const loginUrl = `${appOrigin()}/login`
   const roleLabel = ROLE_LABELS[role]
@@ -175,9 +216,10 @@ export async function sendTeamInviteEmail({
       `${invitedByLine(invitedBy)} to join the Workseez client portal as a <strong>${escapeHtml(roleLabel)}</strong>.`,
       "Sign in to see the clients you work with, their files, updates and everything the team keeps in one place.",
     ],
+    code: accessKey ? { label: "Your access key", value: accessKey } : undefined,
     buttonLabel: "Sign in to Workseez",
     buttonHref: loginUrl,
-    footnote: `Sign in with Google using <strong>${escapeHtml(to)}</strong> — access is tied to that address.`,
+    footnote: signInOptionsHtml(to, accessKey),
   })
 
   const text = asText([
@@ -187,7 +229,7 @@ export async function sendTeamInviteEmail({
     "",
     `Sign in here: ${loginUrl}`,
     "",
-    `Use Google sign-in with ${to} — access is tied to that address.`,
+    ...signInOptionsText(to, accessKey),
   ])
 
   return sendMail({ to, subject: "You've been invited to Workseez", html, text })
@@ -199,6 +241,7 @@ export async function sendClientInviteEmail({
   name,
   invitedBy,
   company,
+  accessKey,
 }: InviteInput & { company?: string | null }) {
   const loginUrl = `${appOrigin()}/login`
 
@@ -212,9 +255,10 @@ export async function sendClientInviteEmail({
       }.`,
       "It's where you'll find your project progress, shared files and updates from your account manager — all in one place.",
     ],
+    code: accessKey ? { label: "Your access key", value: accessKey } : undefined,
     buttonLabel: "Sign in to your portal",
     buttonHref: loginUrl,
-    footnote: `Sign in with Google using <strong>${escapeHtml(to)}</strong> — access is tied to that address.`,
+    footnote: signInOptionsHtml(to, accessKey),
   })
 
   const text = asText([
@@ -226,10 +270,122 @@ export async function sendClientInviteEmail({
     "",
     `Sign in here: ${loginUrl}`,
     "",
-    `Use Google sign-in with ${to} — access is tied to that address.`,
+    ...signInOptionsText(to, accessKey),
   ])
 
   return sendMail({ to, subject: "Your Workseez portal is ready", html, text })
+}
+
+/**
+ * A freshly generated key, on its own. Sent when an admin regenerates someone's
+ * key and when a person regenerates their own — the previous one is already
+ * dead by the time this goes out, which is why the mail says so.
+ */
+export async function sendAccessKeyEmail({
+  to,
+  name,
+  accessKey,
+  issuedBy,
+}: {
+  to: string
+  name?: string | null
+  accessKey: string
+  /** The admin who generated it; omitted when the person did it themselves. */
+  issuedBy?: string | null
+}) {
+  const loginUrl = `${appOrigin()}/login`
+
+  const html = renderLayout({
+    preheader: "Your new Workseez access key is inside.",
+    heading: "Your new access key",
+    body: [
+      greeting(name),
+      issuedBy
+        ? `${escapeHtml(issuedBy)} generated a new access key for your Workseez account.`
+        : "Here's the new access key for your Workseez account.",
+      "Type it on the sign-in page and you're in — no password, no Google account needed.",
+    ],
+    code: { label: "Your access key", value: accessKey },
+    buttonLabel: "Go to sign in",
+    buttonHref: loginUrl,
+    footnote: `Any key you had before this one has stopped working. ${KEY_SAFETY_NOTE} You can still <strong>Continue with Google</strong> with <strong>${escapeHtml(to)}</strong> instead.`,
+    footer: "You're getting this because someone asked for a new key on your Workseez account.",
+  })
+
+  const text = asText([
+    `Hi${name ? ` ${name.trim().split(/\s+/)[0]}` : ""},`,
+    "",
+    issuedBy
+      ? `${issuedBy} generated a new access key for your Workseez account.`
+      : "Here's the new access key for your Workseez account.",
+    "",
+    `Your access key: ${accessKey}`,
+    "",
+    `Sign in here: ${loginUrl}`,
+    "",
+    "Any key you had before this one has stopped working.",
+    KEY_SAFETY_NOTE,
+    `You can also continue with Google using ${to}.`,
+  ])
+
+  return sendMail({ to, subject: "Your new Workseez access key", html, text })
+}
+
+/**
+ * Someone who cannot issue their own key has asked for one. Goes to the admins,
+ * who are the only people allowed to act on it.
+ */
+export async function sendAccessKeyRequestEmail({
+  to,
+  requesterName,
+  requesterEmail,
+  roleLabel,
+  hasKey,
+}: {
+  /** One or more admin addresses. */
+  to: string
+  requesterName: string | null
+  requesterEmail: string
+  roleLabel: string
+  /** False when they have no key at all — a first issue rather than a reset. */
+  hasKey: boolean
+}) {
+  const url = `${appOrigin()}/dashboard/settings/access`
+  const who = requesterName?.trim() || requesterEmail
+
+  const html = renderLayout({
+    preheader: `${who} is asking for a new access key.`,
+    heading: "Access key requested",
+    body: [
+      `<strong>${escapeHtml(who)}</strong> has asked for ${
+        hasKey ? "a new" : "an"
+      } access key for the Workseez portal.`,
+      hasKey
+        ? "Issuing one retires the key they have now, so only do it if they've lost it or it has been seen by someone else."
+        : "They don't have one yet, so they can only sign in with Google until you issue it.",
+    ],
+    details: [
+      { label: "Who", value: who },
+      { label: "Email", value: requesterEmail },
+      { label: "Role", value: roleLabel },
+    ],
+    buttonLabel: "Open User Access",
+    buttonHref: url,
+    footnote:
+      "Use <strong>Give key</strong> or <strong>Send a new key</strong> on their row — it emails the key to them.",
+    footer: "You're getting this because you can issue access keys for this workspace.",
+  })
+
+  const text = asText([
+    `${who} has asked for ${hasKey ? "a new" : "an"} access key for the Workseez portal.`,
+    "",
+    `Email: ${requesterEmail}`,
+    `Role: ${roleLabel}`,
+    "",
+    `Issue one here: ${url}`,
+  ])
+
+  return sendMail({ to, subject: `Access key requested by ${who}`, html, text })
 }
 
 /* ------------------------------------------------------------------ *
