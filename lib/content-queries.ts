@@ -185,6 +185,9 @@ export async function listCalendarOverviews(actor: Actor) {
             select: {
               id: true,
               status: true,
+              // Read with the status, never on its own: a status only means
+              // something against the track its type is on.
+              kind: true,
               sharedAt: true,
               scheduledFor: true,
               _count: { select: { comments: true } },

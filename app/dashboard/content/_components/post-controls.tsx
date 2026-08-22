@@ -106,10 +106,10 @@ export function PostControls({
           <SelectValue />
         </SelectTrigger>
         {/* Only the statuses this type can be in — a carousel is never waiting
-            on a shoot or sitting with an editor. The post's own status stays
-            listed either way, so an older one still shows what it is. */}
+            on a shoot or sitting with an editor, so "Scripting" is not on the
+            menu for one even if that is what the row still says. */}
         <SelectContent>
-          {statusesForKind(kind, status).map((option) => (
+          {statusesForKind(kind).map((option) => (
             <SelectItem key={option} value={option}>
               {CONTENT_STATUS_LABELS[option]}
             </SelectItem>

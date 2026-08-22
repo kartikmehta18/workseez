@@ -171,7 +171,7 @@ export default async function DashboardPage() {
                     <li key={post.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5">
                       <span className="min-w-0 flex-1 truncate text-sm">{post.title}</span>
                       {post.needsRawUpload ? <RawUploadBadge /> : null}
-                      <PostStatusBadge status={post.status} />
+                      <PostStatusBadge status={post.status} kind={post.kind} />
                       <span className="text-muted-foreground w-14 shrink-0 text-right text-xs">
                         {post.scheduledFor ? formatDayMonth(post.scheduledFor) : "—"}
                       </span>

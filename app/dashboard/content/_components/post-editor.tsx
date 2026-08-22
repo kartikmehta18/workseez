@@ -31,6 +31,7 @@ import {
   CONTENT_PLATFORM_LABELS,
   CONTENT_STATUS_HINTS,
   CONTENT_STATUS_LABELS,
+  defaultStatusForKind,
   statusesForKind,
   toContentKind,
   toContentPlatform,
@@ -40,18 +41,19 @@ import {
   type PostDetail,
   type PostView,
 } from "@/lib/content"
-import { ScriptEditor, toDraft } from "./script-editor"
+import { PostContentEditor, toDraft } from "./post-content-editor"
 import { savePost } from "../actions"
 
 /**
- * The full post editor — every field on the card, plus the script.
+ * The full post editor — every field on the card, plus whatever the type calls
+ * for: a script on a reel, a title and its copy on a post or a carousel.
  *
  * A dialog rather than a page: a manager working through a cycle edits eight
  * posts in a row, and a round trip to a detail route and back for each one is
  * the difference between doing it and not bothering.
  *
- * The script itself is ScriptEditor, shared with the create dialog so a post can
- * be written the moment it is added and reworked here later.
+ * That written block is PostContentEditor, shared with the create dialog so a
+ * post can be written the moment it is added and reworked here later.
  */
 export function PostEditor({
   post,
@@ -97,20 +99,22 @@ function PostForm({
   const [platform, setPlatform] = React.useState<ContentPlatform>(post.platform)
   const [status, setStatus] = React.useState(post.status)
 
-  // Keeps the post's own status listed even when the type no longer allows it,
-  // so an existing carousel left "in production" opens showing what it is.
-  const statuses = statusesForKind(kind, status)
+  // Strictly this type's track. A post still holding a status from before the
+  // split arrives already read onto its own track by toPostView, so there is
+  // never a value here that the list does not contain.
+  const statuses = statusesForKind(kind)
 
   /**
-   * Switching Reel → Post takes the camera statuses away with it, so a status
-   * the new type cannot be in drops back to Scripting rather than leaving the
-   * select showing a value that is no longer on offer. Nothing is saved until
-   * the form is submitted, so this is still undoable by cancelling.
+   * Switching Reel → Post moves the post onto the other track entirely, so a
+   * status the new type cannot be in drops back to that track's first step
+   * rather than leaving the select showing a value that is no longer on offer.
+   * Nothing is saved until the form is submitted, so this is still undoable by
+   * cancelling.
    */
   const changeKind = (value: string) => {
     const next = toContentKind(value)
     setKind(next)
-    if (!statusesForKind(next).includes(status)) setStatus("SCRIPTING")
+    if (!statusesForKind(next).includes(status)) setStatus(defaultStatusForKind(next))
   }
 
   const onSubmit = (formData: FormData) => {
@@ -280,7 +284,15 @@ function PostForm({
           </div>
         </div>
 
-        <ScriptEditor idPrefix="Edit" kind={kind} initialLines={toDraft(script)} />
+        {/* Script for a reel, Title + Content for a carousel. `originalKind` is
+            what the post is stored as, so the editor can say when switching
+            type is about to leave a written script behind. */}
+        <PostContentEditor
+          idPrefix="Edit"
+          kind={kind}
+          initialLines={toDraft(script)}
+          originalKind={post.kind}
+        />
 
         <div className="grid gap-2">
           <Label htmlFor={`caption-${post.id}`}>Caption</Label>

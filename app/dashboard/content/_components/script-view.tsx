@@ -1,9 +1,10 @@
-import { linkify } from "@/lib/content"
+import { contentBlockTitle, toContentKind, linkify } from "@/lib/content"
 import { cn } from "@/lib/utils"
 
 /**
- * The script block — one labelled line per row, the way the agency writes them:
- * "Shoot Direction: …", "Text hook: …", "Voice over: …", "Cta: …".
+ * The written block — one labelled line per row, the way the agency writes them:
+ * "Shoot Direction: …", "Text hook: …", "Voice over: …", "Cta: …" on a reel, and
+ * "Title: …", "Content: …" on a post or a carousel.
  *
  * Labels are inline with their body rather than stacked above it, because most
  * bodies are a sentence and stacking would double the height of a card the
@@ -39,9 +40,12 @@ function Body({ text }: { text: string }) {
 
 export function ScriptView({
   lines,
+  kind,
   className,
 }: {
   lines: { id: string; label: string; body: string }[]
+  /** Only decides what the block is called when it is still empty. */
+  kind?: string
   className?: string
 }) {
   const filled = lines.filter((line) => line.body.trim().length > 0)
@@ -49,7 +53,8 @@ export function ScriptView({
   if (filled.length === 0) {
     return (
       <p className="text-muted-foreground rounded-lg border border-dashed px-4 py-6 text-center text-sm">
-        The script for this one hasn&apos;t been written yet.
+        The {contentBlockTitle(toContentKind(kind)).toLowerCase()} for this one hasn&apos;t been
+        written yet.
       </p>
     )
   }

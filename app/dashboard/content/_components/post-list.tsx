@@ -18,6 +18,7 @@ import {
 } from "@/lib/content"
 import { CalendarGrid } from "./calendar-grid"
 import { PlatformIcon } from "./content-badges"
+import { CreatePostDialog } from "./create-post-dialog"
 import { PostCard } from "./post-card"
 
 type View = "list" | "calendar"
@@ -39,6 +40,7 @@ export function PostList({
   canDelete,
   canComment,
   driveEnabled,
+  calendarId,
   emptyTitle,
   emptyHint,
 }: {
@@ -50,6 +52,11 @@ export function PostList({
   canDelete: boolean
   canComment: boolean
   driveEnabled: boolean
+  /**
+   * Only the team's view passes it, and only it needs to: it is what lets the
+   * "+" on a day in the month grid open a new post already dated to that day.
+   */
+  calendarId?: string
   emptyTitle: string
   emptyHint: string
 }) {
@@ -163,6 +170,13 @@ export function PostList({
       return next
     })
   }, [])
+
+  /**
+   * The day the "+" in the month grid was tapped on, or null when the new-post
+   * dialog is closed. Holding the date here rather than in the grid keeps the
+   * dialog mounted once for the whole month instead of once per square.
+   */
+  const [addDate, setAddDate] = React.useState<string | null>(null)
 
   /** Tapping a day in the month view jumps to that card, opened. */
   const openFromCalendar = (postId: string) => {
@@ -387,11 +401,27 @@ export function PostList({
       </div>
 
       {view === "calendar" ? (
-        <CalendarGrid
-          posts={filtered}
-          initialMonth={selectedCycle?.startDate ?? null}
-          onSelect={openFromCalendar}
-        />
+        <>
+          <CalendarGrid
+            posts={filtered}
+            initialMonth={selectedCycle?.startDate ?? null}
+            onSelect={openFromCalendar}
+            onAdd={canManage && calendarId ? setAddDate : undefined}
+          />
+          {/* Keyed on the date so picking a second day starts a clean form
+              rather than reopening the last one with its draft intact. */}
+          {calendarId && addDate ? (
+            <CreatePostDialog
+              key={addDate}
+              calendarId={calendarId}
+              defaultDate={addDate}
+              open
+              onOpenChange={(next) => {
+                if (!next) setAddDate(null)
+              }}
+            />
+          ) : null}
+        </>
       ) : filtered.length === 0 ? (
         <div className="rounded-xl border border-dashed p-8 text-center sm:p-12">
           <CalendarDays className="text-muted-foreground mx-auto size-8" />

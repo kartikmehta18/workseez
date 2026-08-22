@@ -364,7 +364,15 @@ model ContentPost {
   // INSTAGRAM | LINKEDIN | YOUTUBE | TWITTER — the channel it goes out on, a
   // separate axis from `kind`: the same reel can be an Instagram or a YouTube one.
   platform   String @default("INSTAGRAM")
-  // SCRIPTING | SHOOT_PENDING | IN_PRODUCTION | SCHEDULED | PUBLISHED
+  // Two tracks that differ in how the thing gets made and then converge — see
+  // statusesForKind in lib/content.ts. Which one applies is decided by `kind`:
+  //   filmed  (REEL | STORY | YOUTUBE)
+  //     SCRIPTING | SHOOT_PENDING | IN_PRODUCTION | CAPTIONING | SCHEDULED | PUBLISHED
+  //   designed (POST | CAROUSEL)
+  //     CONTENT_TOPICS | CONTENT_RESEARCH | DESIGNING | CAPTIONING | PUBLISHED
+  // CAPTIONING and PUBLISHED are on both; SCHEDULED is filmed-only.
+  // The default suits the default kind; a post created as a carousel is written
+  // with CONTENT_TOPICS explicitly.
   status     String @default("SCRIPTING")
 
   // The day it is planned for. Drives which cycle it lands in and where it sits

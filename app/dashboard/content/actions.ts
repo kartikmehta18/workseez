@@ -16,6 +16,7 @@ import {
   CONTENT_KIND_LABELS,
   CONTENT_STATUS_LABELS,
   DEFAULT_CYCLE_LENGTH,
+  defaultStatusForKind,
   formatDayMonth,
   isContentKind,
   isContentPlatform,
@@ -24,6 +25,7 @@ import {
   MAX_SCRIPT_LINES,
   parseDateInput,
   seedScriptLines,
+  statusesForKind,
   toContentKind,
   toContentStatus,
   toPostDetail,
@@ -348,8 +350,17 @@ function parsePostFields(formData: FormData): PostFields | { error: string } {
   const platform = String(formData.get("platform") ?? "INSTAGRAM")
   if (!isContentPlatform(platform)) return { error: "Pick a platform." }
 
-  const status = String(formData.get("status") ?? "SCRIPTING")
+  // The fallback follows the kind — a carousel arriving without a status starts
+  // at the top of its own track, not on a step it is not allowed to be on.
+  const status = String(formData.get("status") ?? defaultStatusForKind(kind))
   if (!isContentStatus(status)) return { error: "Pick a status." }
+  // The two tracks share only PUBLISHED, so a mismatched pair is not merely odd
+  // — it writes a status the post's own dropdown cannot offer, which then shows
+  // up in a list nobody can move it out of. The dialogs already prevent this;
+  // this is the same rule where it can actually be relied on.
+  if (!statusesForKind(kind).includes(status)) {
+    return { error: "That status doesn't apply to this content type." }
+  }
 
   const url = (field: string) => String(formData.get(field) ?? "").trim() || null
 
@@ -528,6 +539,10 @@ export async function setPostStatus(formData: FormData): Promise<ActionResult> {
   const post = await loadManageablePost(guard.actor, String(formData.get("postId") ?? ""))
   if (!post) return fail("Post not found.")
   if (post.status === status) return { ok: true }
+  // Same rule as parsePostFields, against the kind already on the row.
+  if (!statusesForKind(toContentKind(post.kind)).includes(status)) {
+    return fail("That status doesn't apply to this content type.")
+  }
 
   const updated = await prisma.contentPost.update({
     where: { id: post.id },
