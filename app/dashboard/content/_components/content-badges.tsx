@@ -7,6 +7,7 @@ import {
   CONTENT_KIND_LABELS,
   CONTENT_PLATFORM_LABELS,
   CONTENT_STATUS_LABELS,
+  normalizeStatusForKind,
   toContentKind,
   toContentPlatform,
   toContentStatus,
@@ -22,20 +23,46 @@ import {
  * features' badges reads consistently. Two statuses sit outside that scale:
  * SHOOT_PENDING is rose because it is the one state that needs the client to
  * act, and IN_PRODUCTION is indigo to separate "being edited" from "waiting".
+ *
+ * The designed track is coloured to rhyme with the filmed one rather than to
+ * stand apart from it: a calendar mixes reels and carousels in one list, and
+ * what a reader wants from the colour is how far along a post is, not which
+ * pipeline it happens to be on. So CONTENT_TOPICS takes the same amber as
+ * SCRIPTING (both are "just started, ours"), and DESIGNING the same indigo as
+ * IN_PRODUCTION (both are "being made"). Only CONTENT_RESEARCH needs a shade of
+ * its own, and violet sits between the two without colliding with rose or sky.
+ *
+ * CAPTIONING is orange: it is on both tracks, and its neighbours there are
+ * indigo before and sky after, so it has to differ from those two and from the
+ * emerald beyond them. That leaves it only mildly close to amber, which is
+ * never adjacent to it — amber opens a track, orange sits near the end of one.
  */
 const STATUS_STYLES: Record<ContentStatus, string> = {
   SCRIPTING: "border-amber-200 bg-amber-50 text-amber-700",
   SHOOT_PENDING: "border-rose-200 bg-rose-50 text-rose-700",
   IN_PRODUCTION: "border-indigo-200 bg-indigo-50 text-indigo-700",
+  CONTENT_TOPICS: "border-amber-200 bg-amber-50 text-amber-700",
+  CONTENT_RESEARCH: "border-violet-200 bg-violet-50 text-violet-700",
+  DESIGNING: "border-indigo-200 bg-indigo-50 text-indigo-700",
+  CAPTIONING: "border-orange-200 bg-orange-50 text-orange-700",
   SCHEDULED: "border-sky-200 bg-sky-50 text-sky-700",
   PUBLISHED: "border-emerald-200 bg-emerald-50 text-emerald-700",
 }
 
 export function PostStatusBadge({
   status,
+  kind,
   className,
 }: {
   status: string | null | undefined
+  /**
+   * The post's type, where the caller has it. Statuses belong to one track or
+   * the other, so this is what stops a row still stored as "Scripting" from
+   * showing that word on a carousel. Callers reading a PostView are already
+   * normalized; this is for the two places that render a status straight off
+   * the query.
+   */
+  kind?: string | null
   className?: string
 }) {
   if (!status) {
@@ -45,7 +72,7 @@ export function PostStatusBadge({
       </Badge>
     )
   }
-  const resolved = toContentStatus(status)
+  const resolved = normalizeStatusForKind(toContentKind(kind), toContentStatus(status))
   return (
     <Badge
       variant="secondary"

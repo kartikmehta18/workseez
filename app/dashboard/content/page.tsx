@@ -220,7 +220,7 @@ async function TeamView({ actor }: { actor: Actor }) {
 
                   {next ? (
                     <div className="mt-3 flex items-center gap-2 border-t pt-3">
-                      <PostStatusBadge status={next.status} />
+                      <PostStatusBadge status={next.status} kind={next.kind} />
                       <span className="text-muted-foreground truncate text-xs">
                         next {next.scheduledFor ? formatDayMonth(next.scheduledFor) : ""}
                       </span>

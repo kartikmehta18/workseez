@@ -42,6 +42,16 @@ export const CONTENT_KIND_PLURALS: Record<ContentKind, string> = {
 export const VIDEO_KINDS: ContentKind[] = ["REEL", "STORY", "YOUTUBE"]
 
 /**
+ * The line the whole module is split along: a reel is filmed, a carousel is
+ * designed, and almost everything below — which statuses exist, what the
+ * content block looks like, whether raw footage is even a concept — follows
+ * from which side of it a kind falls on.
+ */
+export function isVideoKind(kind: ContentKind) {
+  return VIDEO_KINDS.includes(kind)
+}
+
+/**
  * Where the post goes out. Separate from `kind`: a reel is a reel whether it
  * lands on Instagram or YouTube, and the client filters their calendar by
  * channel ("show me the LinkedIn ones") far more often than by format.
@@ -56,10 +66,24 @@ export const CONTENT_PLATFORM_LABELS: Record<ContentPlatform, string> = {
   TWITTER: "X (Twitter)",
 }
 
+/**
+ * Every status a post can be in, across both tracks.
+ *
+ * The order is the order the "Any status" filter lists them in: the video track
+ * top to bottom, then the static track, then the one state they share. Nothing
+ * else reads this list positionally — a select offers `statusesForKind` instead.
+ */
 export const CONTENT_STATUSES = [
+  // Filmed work: written, shot, edited.
   "SCRIPTING",
   "SHOOT_PENDING",
   "IN_PRODUCTION",
+  // Designed work: decided, researched, made.
+  "CONTENT_TOPICS",
+  "CONTENT_RESEARCH",
+  "DESIGNING",
+  // The end of both tracks. SCHEDULED is filmed-only and sits inside it.
+  "CAPTIONING",
   "SCHEDULED",
   "PUBLISHED",
 ] as const
@@ -69,31 +93,77 @@ export const CONTENT_STATUS_LABELS: Record<ContentStatus, string> = {
   SCRIPTING: "Scripting",
   SHOOT_PENDING: "Shoot pending",
   IN_PRODUCTION: "In production",
+  CONTENT_TOPICS: "Content topics",
+  CONTENT_RESEARCH: "Content research",
+  DESIGNING: "Designing",
+  CAPTIONING: "Captioning",
   SCHEDULED: "Scheduled",
   PUBLISHED: "Published",
 }
 
 /**
- * The three states that only exist because something was filmed. A carousel is
- * written and then it goes out; it is never waiting on footage, never with an
- * editor, and never sitting in a queue behind an approved cut. Offering these
- * on a static post only invites a calendar that misreports where the work is.
+ * The two pipelines, in the order the work moves through them.
+ *
+ * How the thing gets made is what differs — filmed or designed — and the middle
+ * of each track says so. A carousel is never waiting on footage, never with an
+ * editor and never sitting behind an approved cut; a reel is never "with the
+ * designer". One shared list of vaguely applicable states is how a calendar
+ * ends up misreporting where the work is, so each kind gets the vocabulary that
+ * actually describes it.
+ *
+ * Two steps are on both: whatever the thing is, its caption gets written and
+ * then it goes out. SCHEDULED sits between them on the filmed track only —
+ * queueing behind an approved cut is a step a carousel does not have.
  */
-const CAMERA_STATUSES: ContentStatus[] = ["SHOOT_PENDING", "IN_PRODUCTION", "SCHEDULED"]
+const VIDEO_STATUSES: ContentStatus[] = [
+  "SCRIPTING",
+  "SHOOT_PENDING",
+  "IN_PRODUCTION",
+  "CAPTIONING",
+  "SCHEDULED",
+  "PUBLISHED",
+]
+
+const STATIC_STATUSES: ContentStatus[] = [
+  "CONTENT_TOPICS",
+  "CONTENT_RESEARCH",
+  "DESIGNING",
+  "CAPTIONING",
+  "PUBLISHED",
+]
 
 /**
- * Which statuses a given type can be in — the full set for anything shot on
- * camera, Scripting and Published for the rest.
+ * Which statuses a given type can be in — its track and nothing else.
  *
- * `current` is always kept, whatever the type. A post that was a reel in
- * production and has just been switched to a carousel still has to render its
- * own value, or the select goes blank and the next save silently rewrites it.
+ * There is deliberately no escape hatch for a value already on the row. A
+ * carousel must never offer "Scripting", not even because that is what it
+ * happens to be stored as: the whole point of the split is that the wrong
+ * vocabulary is never on the menu. `normalizeStatusForKind` is what keeps a row
+ * like that renderable instead.
  */
-export function statusesForKind(kind: ContentKind, current?: ContentStatus): ContentStatus[] {
-  if (VIDEO_KINDS.includes(kind)) return [...CONTENT_STATUSES]
-  return CONTENT_STATUSES.filter(
-    (status) => !CAMERA_STATUSES.includes(status) || status === current,
-  )
+export function statusesForKind(kind: ContentKind): ContentStatus[] {
+  return isVideoKind(kind) ? VIDEO_STATUSES : STATIC_STATUSES
+}
+
+/**
+ * A status this kind can actually be in.
+ *
+ * Rows written before the tracks were split — or by an older client that has
+ * not reloaded — can hold a status the type no longer allows. Rather than show
+ * it, which would put "Scripting" back on a carousel, the UI reads it as the
+ * first step of the track it does belong to. The row itself catches up on its
+ * next save, or in bulk via the migration that moves them.
+ */
+export function normalizeStatusForKind(kind: ContentKind, status: ContentStatus): ContentStatus {
+  return statusesForKind(kind).includes(status) ? status : defaultStatusForKind(kind)
+}
+
+/**
+ * Where a post of this type starts — and where a post drops back to when its
+ * type changes to one its current status doesn't belong to.
+ */
+export function defaultStatusForKind(kind: ContentKind): ContentStatus {
+  return statusesForKind(kind)[0]
 }
 
 /** One line of explanation per status, shown wherever the status is chosen. */
@@ -101,7 +171,11 @@ export const CONTENT_STATUS_HINTS: Record<ContentStatus, string> = {
   SCRIPTING: "The script is still being written.",
   SHOOT_PENDING: "Script is ready — waiting on footage.",
   IN_PRODUCTION: "Footage is in, the editor is working on it.",
-  SCHEDULED: "Edit approved and queued to go out.",
+  CONTENT_TOPICS: "Still deciding what this one is about.",
+  CONTENT_RESEARCH: "Topic is set — gathering the angle and the references.",
+  DESIGNING: "With the designer.",
+  CAPTIONING: "Made — writing the caption that goes out with it.",
+  SCHEDULED: "Caption approved and queued to go out.",
   PUBLISHED: "Live on the client's account.",
 }
 
@@ -149,9 +223,9 @@ export function toContentStatus(value: string | null | undefined): ContentStatus
 }
 
 /**
- * The starting script for a new post, by kind. Labels only — the bodies are
- * what the strategist writes, and seeding example copy would be worse than a
- * blank line because it reads as real direction until someone notices.
+ * The starting script for a new filmed post. Labels only — the bodies are what
+ * the strategist writes, and seeding example copy would be worse than a blank
+ * line because it reads as real direction until someone notices.
  *
  * Every label is editable and any number more can be added, so this is a head
  * start rather than a schema.
@@ -167,10 +241,23 @@ const VIDEO_SCRIPT_LABELS = [
   "GUIDE",
 ]
 
-const STATIC_SCRIPT_LABELS = ["Concept", "Ref", "Headline", "Copy", "Cta", "GUIDE"]
+/**
+ * A designed post has no script — it has a headline and the copy that goes with
+ * it. Fixed, unlike the labels above: these two are the whole block, so there is
+ * nothing to rename and nothing to add.
+ */
+export const STATIC_CONTENT_LABELS = ["Title", "Content"] as const
 
-export function defaultScriptLabels(kind: ContentKind) {
-  return VIDEO_KINDS.includes(kind) ? VIDEO_SCRIPT_LABELS : STATIC_SCRIPT_LABELS
+export function defaultScriptLabels(kind: ContentKind): readonly string[] {
+  return isVideoKind(kind) ? VIDEO_SCRIPT_LABELS : STATIC_CONTENT_LABELS
+}
+
+/**
+ * What the block is called wherever it is shown — the editor heading, the card
+ * heading on both sides, and the sentence shown when it is still empty.
+ */
+export function contentBlockTitle(kind: ContentKind) {
+  return isVideoKind(kind) ? "Script" : "Content"
 }
 
 /** Nested create payload for a new post's script skeleton. */
@@ -516,6 +603,7 @@ function formatBytes(bytes: number | null) {
  */
 export function toPostView(post: LoadedListPost, actor: Actor): PostView {
   const canManage = can(actor, "content:manage")
+  const kind = toContentKind(post.kind)
   // Internal notes are stripped rather than merely hidden by the card: props
   // reach the browser whether or not they are rendered, so the client's payload
   // must not carry them at all — and for the same reason they stay out of the
@@ -525,9 +613,12 @@ export function toPostView(post: LoadedListPost, actor: Actor): PostView {
   return {
     id: post.id,
     title: post.title,
-    kind: toContentKind(post.kind),
+    kind,
     platform: toContentPlatform(post.platform),
-    status: toContentStatus(post.status),
+    // Read against this post's own track, so a row still holding a status from
+    // before the split renders as the step it maps to rather than showing a
+    // carousel as "Scripting".
+    status: normalizeStatusForKind(kind, toContentStatus(post.status)),
     scheduledDate: toDateInputValue(post.scheduledFor) || null,
     scheduledLabel: post.scheduledFor ? formatDayMonth(post.scheduledFor) : null,
     shared: post.sharedAt !== null,

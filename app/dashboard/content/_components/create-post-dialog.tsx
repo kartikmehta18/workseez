@@ -31,16 +31,17 @@ import {
   CONTENT_PLATFORM_LABELS,
   CONTENT_STATUS_HINTS,
   CONTENT_STATUS_LABELS,
+  defaultStatusForKind,
+  isVideoKind,
   statusesForKind,
   toContentKind,
   toContentPlatform,
   toContentStatus,
-  VIDEO_KINDS,
   type ContentKind,
   type ContentPlatform,
   type ContentStatus,
 } from "@/lib/content"
-import { ScriptEditor, seedDraft } from "./script-editor"
+import { PostContentEditor, seedDraft } from "./post-content-editor"
 import { createPost } from "../actions"
 
 /**
@@ -49,9 +50,9 @@ import { createPost } from "../actions"
  * The script is written here rather than only in the edit dialog: a strategist
  * adding a reel already has the hooks and the shoot direction in front of them,
  * and making them save an empty post first just to reopen it is a step for the
- * software's benefit, not theirs. Picking the type seeds the right skeleton — a
- * reel gets shoot direction and hooks, a static post gets a concept and copy —
- * and every label stays editable here and afterwards.
+ * software's benefit, not theirs. Picking the type decides what they get — a
+ * reel gets a script skeleton of shoot direction and hooks, a post or a carousel
+ * gets the title and copy that go out instead.
  *
  * "Publish now" is off by default. Writing a post and showing it to the client
  * are two decisions, and the wrong default puts unfinished direction in front
@@ -60,20 +61,38 @@ import { createPost } from "../actions"
 export function CreatePostDialog({
   calendarId,
   defaultDate,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   calendarId: string
   /** Pre-fills the date field — usually the selected cycle's start. */
   defaultDate?: string | null
+  /**
+   * Drives the dialog from outside and drops its own button, which is what the
+   * "+" on a day in the month grid uses: the date comes from the square that
+   * was tapped, so there is nothing for a header button to open.
+   */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
-  const [open, setOpen] = React.useState(false)
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false)
+
+  const controlled = controlledOpen !== undefined
+  const open = controlled ? controlledOpen : uncontrolledOpen
+  const setOpen = (next: boolean) => {
+    if (!controlled) setUncontrolledOpen(next)
+    onOpenChange?.(next)
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>
-          <Plus /> New post
-        </Button>
-      </DialogTrigger>
+      {controlled ? null : (
+        <DialogTrigger asChild>
+          <Button>
+            <Plus /> New post
+          </Button>
+        </DialogTrigger>
+      )}
       {/* No max-h override — DialogContent already caps at 100dvh-2rem. A vh cap
           measures the viewport behind mobile browser chrome, which put the
           footer buttons under the address bar on a phone. */}
@@ -104,7 +123,7 @@ function NewPostForm({
   const [pending, startTransition] = React.useTransition()
   const [kind, setKind] = React.useState<ContentKind>("REEL")
   const [platform, setPlatform] = React.useState<ContentPlatform>("INSTAGRAM")
-  const [status, setStatus] = React.useState<ContentStatus>("SCRIPTING")
+  const [status, setStatus] = React.useState<ContentStatus>(defaultStatusForKind("REEL"))
 
   const onSubmit = (formData: FormData) => {
     startTransition(async () => {
@@ -122,18 +141,18 @@ function NewPostForm({
     })
   }
 
-  const isVideo = VIDEO_KINDS.includes(kind)
-  const statuses = statusesForKind(kind, status)
+  const isVideo = isVideoKind(kind)
+  const statuses = statusesForKind(kind)
 
   /**
-   * Switching Reel → Post takes the camera statuses away with it, so a status
-   * the new type cannot be in drops back to Scripting rather than leaving the
-   * select showing a value that is no longer on offer.
+   * Switching Reel → Post moves the post onto the other track entirely, so a
+   * status the new type cannot be in drops back to that track's first step
+   * rather than leaving the select showing a value that is no longer on offer.
    */
   const changeKind = (value: string) => {
     const next = toContentKind(value)
     setKind(next)
-    if (!statusesForKind(next).includes(status)) setStatus("SCRIPTING")
+    if (!statusesForKind(next).includes(status)) setStatus(defaultStatusForKind(next))
   }
 
   return (
@@ -146,8 +165,8 @@ function NewPostForm({
       <DialogHeader>
         <DialogTitle>New post</DialogTitle>
         <DialogDescription>
-          Starts with the standard script lines for the type you pick — every label is editable
-          afterwards, and you can add as many more as you need.
+          The type you pick decides what gets written: a reel starts with the standard script lines,
+          a post or a carousel with a title and its copy.
         </DialogDescription>
       </DialogHeader>
 
@@ -272,10 +291,11 @@ function NewPostForm({
           </div>
         </div>
 
-        {/* Seeded from the type above and re-seeded while the script is
-            still blank, so switching Reel → Post swaps the skeleton but
-            never discards anything already written. */}
-        <ScriptEditor
+        {/* Follows the type above: a script for anything filmed, Title and
+            Content for a post or a carousel. Re-seeded only while nothing has
+            been written, so switching Reel → Story swaps the skeleton but never
+            discards anything already typed. */}
+        <PostContentEditor
           idPrefix="New"
           kind={kind}
           initialLines={seedDraft("REEL")}

@@ -14,7 +14,7 @@ import {
 
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { VIDEO_KINDS, type PostDetail, type PostView } from "@/lib/content"
+import { contentBlockTitle, isVideoKind, type PostDetail, type PostView } from "@/lib/content"
 import { loadPostDetail } from "../actions"
 import {
   PostKindBadge,
@@ -151,7 +151,7 @@ export const PostCard = React.memo(function PostCard({
   const bodyId = `post-body-${post.id}`
   const { detail, loading } = usePostDetail(post.id, open, detailVersion)
 
-  const isVideo = VIDEO_KINDS.includes(post.kind)
+  const isVideo = isVideoKind(post.kind)
   // The client only gets the upload panel when it is asked for; the team always
   // has it, so they can drop an edit or a stand-in file in themselves.
   const showUpload = isVideo && (canManage || post.needsRawUpload)
@@ -274,11 +274,14 @@ export const PostCard = React.memo(function PostCard({
                 </div>
               ) : null}
 
+              {/* "Script" on a reel, "Content" on a post or carousel — the
+                  client reads this block too, so it has to name what they are
+                  actually looking at. */}
               <div>
                 <h4 className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
-                  Script
+                  {contentBlockTitle(post.kind)}
                 </h4>
-                <ScriptView lines={detail.script} className="mt-2" />
+                <ScriptView lines={detail.script} kind={post.kind} className="mt-2" />
               </div>
 
               {post.caption ? (

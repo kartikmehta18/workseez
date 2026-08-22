@@ -186,6 +186,7 @@ export default async function ClientContentPage({ params }: { params: Promise<{ 
         canDelete={canDelete}
         canComment
         driveEnabled={driveConfigured()}
+        calendarId={calendar.id}
         emptyTitle="No posts yet"
         emptyHint="Add the first post of the cycle — title, type and date now, script next."
       />
