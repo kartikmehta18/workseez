@@ -279,7 +279,7 @@ type LoadedComment = {
   createdAt: Date
   authorId: string | null
   authorRole: string | null
-  author: { name: string | null; email: string; avatarUrl: string | null } | null
+  author: { name: string | null; email: string | null; avatarUrl: string | null } | null
 }
 
 export type ThreadComment = {

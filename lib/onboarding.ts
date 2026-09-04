@@ -202,7 +202,7 @@ type LoadedSections = {
       answer: {
         value: string
         updatedByRole: string | null
-        updatedBy: { name: string | null; email: string } | null
+        updatedBy: { name: string | null; email: string | null } | null
       } | null
     }[]
   }[]

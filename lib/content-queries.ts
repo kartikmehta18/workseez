@@ -230,11 +230,18 @@ export async function calendarRecipients(clientId: string) {
   ])
   if (!client) return null
 
+  // Keyed by address, which also dedupes a manager who is themselves an admin.
+  // An account with no email (a client added without one) simply cannot be
+  // notified, so it is skipped rather than keying the map on null.
   const team = new Map<string, { email: string; name: string | null }>()
   for (const { user } of client.managers) {
-    if (user.status !== "DISABLED") team.set(user.email, { email: user.email, name: user.name })
+    if (user.status !== "DISABLED" && user.email) {
+      team.set(user.email, { email: user.email, name: user.name })
+    }
   }
-  for (const admin of admins) team.set(admin.email, admin)
+  for (const admin of admins) {
+    if (admin.email) team.set(admin.email, { email: admin.email, name: admin.name })
+  }
 
   return {
     client,

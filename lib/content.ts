@@ -260,6 +260,21 @@ export function contentBlockTitle(kind: ContentKind) {
   return isVideoKind(kind) ? "Script" : "Content"
 }
 
+/**
+ * What the two delivery links are called — the same two columns either way,
+ * but a filmed post ends in a cut and a designed one ends in the artwork, so
+ * "Final edit" and "Edits folder" only make sense on the video track. On a post
+ * or a carousel they are the final post and the folder it lives in.
+ *
+ * `rawFileUrl` keeps its name on both tracks: it is whatever went in, footage
+ * or source file.
+ */
+export function contentLinkLabels(kind: ContentKind) {
+  return isVideoKind(kind)
+    ? { final: "Final edit", folder: "Edits folder", folderHint: "Where the finished cuts live" }
+    : { final: "Final post", folder: "Post folder", folderHint: "Where the finished posts live" }
+}
+
 /** Nested create payload for a new post's script skeleton. */
 export function seedScriptLines(kind: ContentKind) {
   return defaultScriptLabels(kind).map((label, index) => ({
@@ -460,7 +475,7 @@ type LoadedComment = {
   createdAt: Date
   authorId: string | null
   authorRole: string | null
-  author: { name: string | null; email: string; avatarUrl: string | null } | null
+  author: { name: string | null; email: string | null; avatarUrl: string | null } | null
 }
 
 export type PostComment = {
@@ -537,7 +552,7 @@ type LoadedPost = {
     url: string | null
     sizeBytes: number | null
     createdAt: Date
-    uploadedBy: { name: string | null; email: string } | null
+    uploadedBy: { name: string | null; email: string | null } | null
   }[]
   comments: LoadedComment[]
   notes: string | null

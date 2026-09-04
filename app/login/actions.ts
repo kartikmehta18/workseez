@@ -16,6 +16,7 @@ import {
   SESSION_COOKIE,
   sessionCookieOptions,
 } from "@/lib/session"
+import { displayNameFor } from "@/lib/rbac"
 
 export type KeySignInState = { error?: string }
 
@@ -66,7 +67,7 @@ export async function signInWithKey(
     await encodeSession({
       sub: result.user.id,
       email: result.user.email,
-      name: result.user.name ?? result.user.email,
+      name: displayNameFor(result.user),
       picture: result.user.avatarUrl ?? undefined,
     }),
     sessionCookieOptions,

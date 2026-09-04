@@ -25,19 +25,25 @@ export function AddClientDialog() {
   const [pending, startTransition] = React.useTransition()
 
   function onSubmit(formData: FormData) {
+    // Whether an address was given changes what "not emailed" means: no invite
+    // was ever meant to go out, versus one that was and failed.
+    const hasEmail = String(formData.get("email") ?? "").trim().length > 0
+
     startTransition(async () => {
       const result = await createClient(formData)
       if (result.ok) {
         toast.success(
           result.emailed
             ? "Client created. An invite email is on its way."
-            : "Client created, but the invite email couldn't be sent — share the key below yourself.",
+            : hasEmail
+              ? "Client created, but the invite email couldn't be sent — share the key below yourself."
+              : "Client created. No email was given, so pass the key below on yourself.",
           {
             description: result.accessKey
               ? `Access key ${result.accessKey} — the only time it is shown.`
               : undefined,
-            // Long enough to write down when the mail didn't go: this is then
-            // the only copy of the key that exists anywhere.
+            // Long enough to write down whenever no mail went out: the toast is
+            // then the only copy of the key that exists anywhere.
             duration: result.emailed ? 8000 : 60000,
           },
         )
@@ -63,9 +69,10 @@ export function AddClientDialog() {
           <DialogHeader>
             <DialogTitle>Add a client</DialogTitle>
             <DialogDescription>
-              The email is what links them to this profile — and the Google account they can
-              sign in with. The invite carries a 6-digit access key too, for when they have
-              no Google account on that address.
+              Every client gets a 6-digit access key, which signs them in on its own. An email
+              is optional: add one and the invite goes out automatically carrying that key,
+              and they can use Google sign-in on that address too. Leave it blank and the key
+              is their only way in — pass it on yourself.
             </DialogDescription>
           </DialogHeader>
 
@@ -79,10 +86,15 @@ export function AddClientDialog() {
               <Input id="company" name="company" placeholder="Workseez" />
             </div>
             <div className="grid content-start gap-2">
-              <Label htmlFor="email">Google email</Label>
-              <Input id="email" name="email" type="email" placeholder="Sagar@example.com" required />
+              <Label htmlFor="email">
+                Google email <span className="text-muted-foreground font-normal">(optional)</span>
+              </Label>
+              <Input id="email" name="email" type="email" placeholder="sagar@example.com" />
+              <p className="text-muted-foreground text-xs">
+                Leave blank if they have no email — they sign in with the key alone.
+              </p>
             </div>
-            <AccessKeyField hint="Six digits, sent with the invite — it signs them in without Google." />
+            <AccessKeyField hint="Six digits, always issued. Blank draws one for you." />
             <div className="grid content-start gap-2 sm:col-span-2">
               <Label htmlFor="driveUrl">Google Drive folder</Label>
               <Input

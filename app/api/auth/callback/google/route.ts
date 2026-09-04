@@ -49,7 +49,9 @@ export async function GET(request: NextRequest) {
       await encodeSession({
         sub: result.id,
         email: result.email,
-        name: result.name ?? result.email,
+        // Google always supplies a verified email, so this branch practically
+        // always has one; the fallbacks satisfy the now-nullable column.
+        name: result.name ?? result.email ?? "",
         picture: result.avatarUrl ?? undefined,
       }),
       sessionCookieOptions,

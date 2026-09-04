@@ -31,6 +31,7 @@ import {
   CONTENT_PLATFORM_LABELS,
   CONTENT_STATUS_HINTS,
   CONTENT_STATUS_LABELS,
+  contentLinkLabels,
   defaultStatusForKind,
   isVideoKind,
   statusesForKind,
@@ -143,6 +144,7 @@ function NewPostForm({
 
   const isVideo = isVideoKind(kind)
   const statuses = statusesForKind(kind)
+  const linkLabels = contentLinkLabels(kind)
 
   /**
    * Switching Reel → Post moves the post onto the other track entirely, so a
@@ -281,7 +283,7 @@ function NewPostForm({
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="new-post-final">Final edit link</Label>
+            <Label htmlFor="new-post-final">{linkLabels.final} link</Label>
             <Input
               id="new-post-final"
               name="finalEditUrl"

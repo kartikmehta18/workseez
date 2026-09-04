@@ -10,10 +10,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { ROLE_LABELS, type Actor } from "@/lib/rbac"
+import { displayNameFor, ROLE_LABELS, type Actor } from "@/lib/rbac"
 
 export function UserMenu({ actor }: { actor: Actor }) {
-  const display = actor.name ?? actor.email
+  const display = displayNameFor(actor)
   const initial = display.charAt(0).toUpperCase()
 
   return (

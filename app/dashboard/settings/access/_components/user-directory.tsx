@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { isSuperAdminEmail, ROLE_LABELS, ROLES, type Role } from "@/lib/rbac"
+import { displayNameFor, isSuperAdminEmail, ROLE_LABELS, ROLES, type Role } from "@/lib/rbac"
 import { cn } from "@/lib/utils"
 import { InviteStatusBadge, RoleBadge } from "../../../_components/status-badges"
 import { GenerateKeyButton, ViewKeyButton } from "../../../_components/generate-key-button"
@@ -72,7 +72,7 @@ export function UserDirectory({
       if (!needle) return true
       return (
         (user.name ?? "").toLowerCase().includes(needle) ||
-        user.email.toLowerCase().includes(needle) ||
+        (user.email ?? "").toLowerCase().includes(needle) ||
         (user.ownedClientName ?? "").toLowerCase().includes(needle)
       )
     })
@@ -202,7 +202,7 @@ export function UserDirectory({
                           <Avatar className="size-8 shrink-0">
                             {user.avatarUrl ? <AvatarImage src={user.avatarUrl} alt="" /> : null}
                             <AvatarFallback>
-                              {(user.name ?? user.email).charAt(0).toUpperCase()}
+                              {displayNameFor(user).charAt(0).toUpperCase()}
                             </AvatarFallback>
                           </Avatar>
                           <div className="min-w-0">
@@ -254,7 +254,7 @@ export function UserDirectory({
                           {canResetKey && user.accessKeySetAt ? (
                             <ViewKeyButton
                               target={{ kind: "user", id: user.id }}
-                              description={user.email}
+                              description={user.email ?? undefined}
                               iconOnly
                             />
                           ) : null}
@@ -262,7 +262,7 @@ export function UserDirectory({
                             <GenerateKeyButton
                               target={{ kind: "user", id: user.id }}
                               label={user.accessKeySetAt ? "Send a new key" : "Give an access key"}
-                              description={user.email}
+                              description={user.email ?? undefined}
                               iconOnly
                             />
                           ) : null}
@@ -289,7 +289,7 @@ export function UserDirectory({
                     <Avatar className="size-10 shrink-0">
                       {user.avatarUrl ? <AvatarImage src={user.avatarUrl} alt="" /> : null}
                       <AvatarFallback>
-                        {(user.name ?? user.email).charAt(0).toUpperCase()}
+                        {displayNameFor(user).charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0 flex-1">
@@ -320,14 +320,14 @@ export function UserDirectory({
                           {canResetKey && user.accessKeySetAt ? (
                             <ViewKeyButton
                               target={{ kind: "user", id: user.id }}
-                              description={user.email}
+                              description={user.email ?? undefined}
                             />
                           ) : null}
                           {canResetKey && user.status !== "DISABLED" ? (
                             <GenerateKeyButton
                               target={{ kind: "user", id: user.id }}
                               label={user.accessKeySetAt ? "New key" : "Give key"}
-                              description={user.email}
+                              description={user.email ?? undefined}
                             />
                           ) : null}
                           {canSetRole && !isOwner ? (

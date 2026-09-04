@@ -68,7 +68,9 @@ async function logoAttachment() {
 }
 
 export type MailInput = {
-  to: string
+  // Nullable: a client may be added without an email, and every send site
+  // treats "nowhere to send it" the same way it treats a failed send.
+  to: string | null
   subject: string
   html: string
   text: string
@@ -80,6 +82,10 @@ export type MailInput = {
  * link themselves" — mail is a courtesy here, not the source of access.
  */
 export async function sendMail({ to, subject, html, text }: MailInput): Promise<boolean> {
+  // No address is not an error: clients created without one are reachable
+  // only through the access key their admin reads out to them.
+  if (!to) return false
+
   const mailer = transport()
   if (!mailer) {
     console.warn(`[mail] SMTP_HOST is not set — skipped "${subject}" to ${to}`)

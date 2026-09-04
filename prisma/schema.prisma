@@ -17,7 +17,7 @@ datasource db {
 
 model User {
   id        String   @id @default(cuid())
-  email     String   @unique
+  email     String?  @unique
   name      String?
   role      String   @default("CLIENT") // SUPER_ADMIN | ADMIN | MANAGER | CLIENT
   status    String   @default("INVITED") // INVITED | ACTIVE | DISABLED
@@ -100,10 +100,14 @@ model Client {
 // because a client may have any number of them, and the set of platforms is
 // open-ended — the admin types whatever label fits.
 model ClientLink {
-  id        String   @id @default(cuid())
-  clientId  String
-  label     String
-  url       String   @db.Text
+  id       String @id @default(cuid())
+  clientId String
+  label    String
+  url      String @db.Text
+  // The Drive folder holding the assets for this one account, so an Instagram
+  // row and a LinkedIn row each point at their own folder. Separate from
+  // Client.driveUrl, which is the catch-all folder for the whole client.
+  driveUrl  String?  @db.Text
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
 

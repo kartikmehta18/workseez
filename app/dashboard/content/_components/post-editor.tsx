@@ -31,6 +31,7 @@ import {
   CONTENT_PLATFORM_LABELS,
   CONTENT_STATUS_HINTS,
   CONTENT_STATUS_LABELS,
+  contentLinkLabels,
   defaultStatusForKind,
   statusesForKind,
   toContentKind,
@@ -103,6 +104,7 @@ function PostForm({
   // split arrives already read onto its own track by toPostView, so there is
   // never a value here that the list does not contain.
   const statuses = statusesForKind(kind)
+  const linkLabels = contentLinkLabels(kind)
 
   /**
    * Switching Reel → Post moves the post onto the other track entirely, so a
@@ -253,7 +255,7 @@ function PostForm({
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor={`final-${post.id}`}>Final edit link</Label>
+            <Label htmlFor={`final-${post.id}`}>{linkLabels.final} link</Label>
             <Input
               id={`final-${post.id}`}
               name="finalEditUrl"
@@ -273,13 +275,13 @@ function PostForm({
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor={`editsfolder-${post.id}`}>Edits folder</Label>
+            <Label htmlFor={`editsfolder-${post.id}`}>{linkLabels.folder}</Label>
             <Input
               id={`editsfolder-${post.id}`}
               name="editsFolderUrl"
               type="url"
               defaultValue={post.editsFolderUrl ?? ""}
-              placeholder="Where the finished cuts live"
+              placeholder={linkLabels.folderHint}
             />
           </div>
         </div>

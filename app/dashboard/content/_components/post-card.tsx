@@ -14,7 +14,13 @@ import {
 
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { contentBlockTitle, isVideoKind, type PostDetail, type PostView } from "@/lib/content"
+import {
+  contentBlockTitle,
+  contentLinkLabels,
+  isVideoKind,
+  type PostDetail,
+  type PostView,
+} from "@/lib/content"
 import { loadPostDetail } from "../actions"
 import {
   PostKindBadge,
@@ -155,6 +161,7 @@ export const PostCard = React.memo(function PostCard({
   // The client only gets the upload panel when it is asked for; the team always
   // has it, so they can drop an edit or a stand-in file in themselves.
   const showUpload = isVideo && (canManage || post.needsRawUpload)
+  const linkLabels = contentLinkLabels(post.kind)
 
   return (
     <li
@@ -266,10 +273,14 @@ export const PostCard = React.memo(function PostCard({
                     <LinkButton href={post.rawFileUrl} label="Raw file" icon={Video} />
                   ) : null}
                   {post.finalEditUrl ? (
-                    <LinkButton href={post.finalEditUrl} label="Final edit" icon={FileText} />
+                    <LinkButton href={post.finalEditUrl} label={linkLabels.final} icon={FileText} />
                   ) : null}
                   {post.editsFolderUrl ? (
-                    <LinkButton href={post.editsFolderUrl} label="Edits folder" icon={FolderOpen} />
+                    <LinkButton
+                      href={post.editsFolderUrl}
+                      label={linkLabels.folder}
+                      icon={FolderOpen}
+                    />
                   ) : null}
                 </div>
               ) : null}

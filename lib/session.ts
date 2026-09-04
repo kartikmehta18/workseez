@@ -5,7 +5,8 @@ const MAX_AGE_SECONDS = 60 * 60 * 24 * 7 // 7 days
 
 export type SessionUser = {
   sub: string
-  email: string
+  // Null for key-only accounts; the session is keyed on `sub` regardless.
+  email: string | null
   name: string
   picture?: string
 }

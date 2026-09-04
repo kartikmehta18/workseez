@@ -46,12 +46,18 @@ export function EditClientDialog({ client }: { client: ClientFields }) {
   const emailChanged = email.trim().toLowerCase() !== client.ownerEmail.toLowerCase()
 
   function onSubmit(formData: FormData) {
+    // Clearing the address is a deliberate switch to key-only access, not a
+    // send that failed — the two need different words for the same `false`.
+    const cleared = !String(formData.get("email") ?? "").trim()
+
     startTransition(async () => {
       const result = await updateClient(formData)
       if (result.ok) {
         toast.success(
           result.emailed === false
-            ? "Client updated, but the invite email to the new address couldn't be sent."
+            ? cleared
+              ? "Client updated. They now sign in with the key below and nothing else."
+              : "Client updated, but the invite email to the new address couldn't be sent."
             : result.emailed
               ? "Client updated. A new invite and access key went to the updated address."
               : "Client updated.",
@@ -103,16 +109,23 @@ export function EditClientDialog({ client }: { client: ClientFields }) {
               <Input id="edit-company" name="company" defaultValue={client.company ?? ""} />
             </div>
             <div className="grid content-start gap-2">
-              <Label htmlFor="edit-email">Login email</Label>
+              <Label htmlFor="edit-email">
+                Login email <span className="text-muted-foreground font-normal">(optional)</span>
+              </Label>
               <Input
                 id="edit-email"
                 name="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                required
               />
-              {emailChanged ? (
+              {emailChanged && !email.trim() ? (
+                <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+                  Clearing the address removes Google sign-in for this client. Their access key
+                  becomes the only way in, and a fresh one is issued on save — the old key stops
+                  working, so pass the new one on yourself.
+                </p>
+              ) : emailChanged ? (
                 <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
                   Changing the login email rebinds portal access. The client will need to sign in
                   with Google using the new address
@@ -121,7 +134,7 @@ export function EditClientDialog({ client }: { client: ClientFields }) {
                 </p>
               ) : (
                 <p className="text-muted-foreground text-xs">
-                  The Google account this client signs in with.
+                  The Google account this client signs in with. Blank means key-only access.
                 </p>
               )}
             </div>

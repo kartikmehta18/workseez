@@ -5,7 +5,13 @@ import { prisma } from "@/lib/db"
 import { getCurrentActor } from "@/lib/auth"
 import { issueAccessKey, revealAccessKey, validateChosenAccessKey } from "@/lib/access-key"
 import { sendAccessKeyEmail, sendClientInviteEmail } from "@/lib/emails"
-import { assertCan, CLIENT_STATUSES, ForbiddenError, isSuperAdminEmail } from "@/lib/rbac"
+import {
+  assertCan,
+  CLIENT_STATUSES,
+  displayNameFor,
+  ForbiddenError,
+  isSuperAdminEmail,
+} from "@/lib/rbac"
 import { labelFromUrl, MAX_CLIENT_LINKS, normalizeUrl } from "@/lib/links"
 
 /**
@@ -21,27 +27,44 @@ function fail(error: string): ActionResult {
   return { ok: false, error }
 }
 
-type ParsedLink = { label: string; url: string; sortOrder: number }
+/** Shape check only — deliverability is proven by the invite arriving. */
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+type ParsedLink = { label: string; url: string; driveUrl: string | null; sortOrder: number }
 
 /**
- * The social-links editor submits parallel `linkLabel`/`linkUrl` arrays. Rows
- * the user added but left blank are dropped rather than rejected, so an
- * accidental click on "+" never blocks saving.
+ * The social-links editor submits parallel `linkLabel`/`linkUrl`/`linkDriveUrl`
+ * arrays, one entry per row in row order. Rows the user added but left blank
+ * are dropped rather than rejected, so an accidental click on "+" never blocks
+ * saving — a row with only a Drive folder and no social URL is nothing to
+ * attach the folder to, so it's dropped the same way.
  */
 function parseLinks(formData: FormData): ParsedLink[] | { error: string } {
   const labels = formData.getAll("linkLabel").map((v) => String(v))
   const urls = formData.getAll("linkUrl").map((v) => String(v))
+  const driveUrls = formData.getAll("linkDriveUrl").map((v) => String(v))
 
   const links: ParsedLink[] = []
   for (let i = 0; i < urls.length; i++) {
     const rawUrl = (urls[i] ?? "").trim()
     const rawLabel = (labels[i] ?? "").trim()
+    const rawDriveUrl = (driveUrls[i] ?? "").trim()
     if (!rawUrl) continue
 
     const url = normalizeUrl(rawUrl)
     if (!url) return { error: `"${rawUrl}" isn't a valid link. Use a full http(s) address.` }
 
-    links.push({ label: rawLabel || labelFromUrl(url), url, sortOrder: links.length })
+    const label = rawLabel || labelFromUrl(url)
+
+    let driveUrl: string | null = null
+    if (rawDriveUrl) {
+      driveUrl = normalizeUrl(rawDriveUrl)
+      if (!driveUrl) {
+        return { error: `The Drive link for ${label} isn't valid. Use a full http(s) address.` }
+      }
+    }
+
+    links.push({ label, url, driveUrl, sortOrder: links.length })
   }
 
   if (links.length > MAX_CLIENT_LINKS) {
@@ -60,11 +83,13 @@ function parseDriveUrl(formData: FormData): string | null | { error: string } {
 }
 
 /**
- * Creates a client and the invited login account that will own it.
+ * Creates a client and the login account that will own it.
  *
- * The client's portal access is bound purely by email: we create a User row
- * with status INVITED and no googleId. When they sign in with Google, the
- * verified email matches this row and the account activates.
+ * Email is optional. With one, the account is bound by address: a User row is
+ * created with status INVITED and no googleId, and their first Google sign-in
+ * on that address activates it — and the invite mail goes out. Without one,
+ * the 6-digit access key is the only way in, which is why the key is issued
+ * unconditionally and a client that cannot get one is not created at all.
  */
 export async function createClient(formData: FormData): Promise<ActionResult> {
   const actor = await getCurrentActor()
@@ -77,18 +102,25 @@ export async function createClient(formData: FormData): Promise<ActionResult> {
 
   const name = String(formData.get("name") ?? "").trim()
   const company = String(formData.get("company") ?? "").trim()
-  const email = String(formData.get("email") ?? "").trim().toLowerCase()
+  // Optional: a client with no address is reached by their access key alone.
+  const email = String(formData.get("email") ?? "").trim().toLowerCase() || null
   const notes = String(formData.get("notes") ?? "").trim()
 
   if (!name) return fail("Client name is required.")
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("Enter a valid email address.")
-  // Guard the bootstrap owner: making them a client would demote them on next login.
-  if (isSuperAdminEmail(email)) return fail("That email belongs to the Super Admin account.")
+  if (email) {
+    if (!EMAIL_PATTERN.test(email)) return fail("Enter a valid email address.")
+    // Guard the bootstrap owner: making them a client would demote them on next login.
+    if (isSuperAdminEmail(email)) return fail("That email belongs to the Super Admin account.")
+  }
 
-  const existingUser = await prisma.user.findUnique({
-    where: { email },
-    select: { id: true, role: true, ownedClient: { select: { id: true } } },
-  })
+  // Only worth a lookup when there is an address to look one up by. Without
+  // one there is nothing to match on, so a fresh account is always created.
+  const existingUser = email
+    ? await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, role: true, ownedClient: { select: { id: true } } },
+      })
+    : null
   if (existingUser?.ownedClient) return fail("That email already owns a client profile.")
   if (existingUser && existingUser.role !== "CLIENT") {
     return fail("That email belongs to a team member. Use a different address.")
@@ -107,7 +139,8 @@ export async function createClient(formData: FormData): Promise<ActionResult> {
   if (keyProblem) return fail(keyProblem)
 
   const created = await prisma.client.create({
-    select: { ownerUserId: true },
+    // id comes back too: it is what undoes the row if the key can't be issued.
+    select: { id: true, ownerUserId: true },
     data: {
       name,
       company: company || null,
@@ -123,28 +156,41 @@ export async function createClient(formData: FormData): Promise<ActionResult> {
     },
   })
 
-  // The key rides along in the invite, so a client with no Google account on
-  // this address still has a way in. A key that can't be issued is logged and
-  // skipped rather than failing the client — the invite then describes Google
-  // sign-in alone, and "Send new key" fixes it afterwards.
+  // Every client gets a key: without an email it is their only way in, and with
+  // one it still saves them needing a Google account on that address. So a key
+  // that cannot be issued is fatal rather than logged — a client left with
+  // neither an address nor a key could never sign in, and nothing in the UI
+  // would say so. Undo the row rather than leave that behind.
   const issued = created.ownerUserId
     ? await issueAccessKey(created.ownerUserId, { key: chosenKey })
-    : ({ ok: false, error: "client has no owner account" } as const)
-  if (!issued.ok) console.error(`[access-key] new client ${email}: ${issued.error}`)
+    : ({ ok: false, error: "The client record was created without a login account." } as const)
+  if (!issued.ok) {
+    // Deleting the client cascades its links; the owner account only goes with
+    // it when this call is what created it, since an existing one predates us.
+    await prisma.client.delete({ where: { id: created.id } }).catch(() => {})
+    if (!existingUser && created.ownerUserId) {
+      await prisma.user.delete({ where: { id: created.ownerUserId } }).catch(() => {})
+    }
+    return fail(issued.error)
+  }
 
-  // Access comes from the account row, not the mail, so a send failure is
-  // reported to the admin rather than failing the whole creation.
+  // No address means nothing to send — not a failure, just a client whose admin
+  // reads the key out to them. sendClientInviteEmail returns false for a null
+  // recipient, which is the same "tell the admin to share it themselves" path a
+  // genuine send failure already took.
   const emailed = await sendClientInviteEmail({
     to: email,
     name,
     company: company || null,
-    invitedBy: actor.name ?? actor.email,
-    accessKey: issued.ok ? issued.key : null,
+    invitedBy: displayNameFor(actor),
+    accessKey: issued.key,
   })
 
   revalidatePath("/dashboard/clients")
   refresh()
-  return { ok: true, emailed, accessKey: issued.ok ? issued.key : undefined }
+  // The key is always returned: with no email it is the only copy that will
+  // ever exist, and the dialog shows it long enough to be written down.
+  return { ok: true, emailed, accessKey: issued.key }
 }
 
 export async function updateClient(formData: FormData): Promise<ActionResult> {
@@ -161,7 +207,9 @@ export async function updateClient(formData: FormData): Promise<ActionResult> {
   const company = String(formData.get("company") ?? "").trim()
   const notes = String(formData.get("notes") ?? "").trim()
   const status = String(formData.get("status") ?? "ACTIVE")
-  const email = String(formData.get("email") ?? "").trim().toLowerCase()
+  // Optional here for the same reason it is optional on creation. Blank now
+  // means "no address", which is a real state rather than a missing field.
+  const email = String(formData.get("email") ?? "").trim().toLowerCase() || null
 
   if (!id) return fail("Missing client.")
   if (!name) return fail("Client name is required.")
@@ -179,19 +227,18 @@ export async function updateClient(formData: FormData): Promise<ActionResult> {
   })
   if (!client) return fail("Client not found.")
 
-  // The login email is the client's only key to the portal, so a change here
-  // is really "who owns this profile". Validate it, then rebind the owner row.
+  // Changing the login email is really "who owns this profile", so it is
+  // validated and the owner row rebound. Clearing it is allowed and means the
+  // access key becomes their only way in — the same state a client added
+  // without an address starts in.
   const owner = client.owner
-  let emailChanged = false
-  if (owner && email && email !== owner.email) {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("Enter a valid email address.")
+  const emailChanged = owner ? email !== owner.email : false
+  if (owner && emailChanged && email) {
+    if (!EMAIL_PATTERN.test(email)) return fail("Enter a valid email address.")
     if (isSuperAdminEmail(email)) return fail("That email belongs to the Super Admin account.")
 
     const taken = await prisma.user.findUnique({ where: { email }, select: { id: true } })
     if (taken && taken.id !== owner.id) return fail("That email is already in use.")
-    emailChanged = true
-  } else if (owner && !email) {
-    return fail("A login email is required.")
   }
 
   // The form always submits the complete set of links, so the stored rows are
@@ -233,11 +280,14 @@ export async function updateClient(formData: FormData): Promise<ActionResult> {
     if (issued.ok) accessKey = issued.key
     else console.error(`[access-key] re-key for ${email}: ${issued.error}`)
 
+    // Nothing to notify when the address was cleared rather than changed; the
+    // re-key above still happened, and the new key comes back in `accessKey`
+    // for the admin to pass on.
     emailed = await sendClientInviteEmail({
       to: email,
       name,
       company: company || null,
-      invitedBy: actor.name ?? actor.email,
+      invitedBy: displayNameFor(actor),
       accessKey: accessKey ?? null,
     })
   }
@@ -278,6 +328,13 @@ export async function resendClientInvite(formData: FormData): Promise<ActionResu
   if (!client?.owner) return fail("This client has no login account.")
   if (client.owner.status === "ACTIVE") return fail("This client has already signed in.")
   if (client.owner.status === "DISABLED") return fail("This client's account is disabled.")
+  // Checked before the key is drawn, not after: this call rotates the key, and
+  // rotating one that can't then be delivered would leave the client worse off
+  // than before. "Send new key" is the route for a client with no address — it
+  // shows the key rather than mailing it.
+  if (!client.owner.email) {
+    return fail("This client has no email address. Use “Send new key” to issue one instead.")
+  }
 
   const issued = await issueAccessKey(client.owner.id)
   if (!issued.ok) return fail(issued.error)
@@ -286,7 +343,7 @@ export async function resendClientInvite(formData: FormData): Promise<ActionResu
     to: client.owner.email,
     name: client.owner.name,
     company: client.company,
-    invitedBy: actor.name ?? actor.email,
+    invitedBy: displayNameFor(actor),
     accessKey: issued.key,
   })
 
@@ -338,7 +395,7 @@ export async function regenerateClientAccessKey(formData: FormData): Promise<Act
     to: client.owner.email,
     name: client.owner.name,
     accessKey: issued.key,
-    issuedBy: actor.name ?? actor.email,
+    issuedBy: displayNameFor(actor),
   })
 
   revalidatePath(`/dashboard/clients/${id}`)

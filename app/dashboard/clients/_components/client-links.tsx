@@ -38,7 +38,7 @@ export function DriveButton({ url }: { url: string | null }) {
   )
 }
 
-export type DisplayLink = { id: string; label: string; url: string }
+export type DisplayLink = { id: string; label: string; url: string; driveUrl?: string | null }
 
 export function SocialLinkList({ links }: { links: DisplayLink[] }) {
   if (links.length === 0) {
@@ -48,7 +48,7 @@ export function SocialLinkList({ links }: { links: DisplayLink[] }) {
   return (
     <ul className="flex flex-wrap gap-2">
       {links.map((link) => (
-        <li key={link.id} className="min-w-0">
+        <li key={link.id} className="flex min-w-0 items-center gap-1">
           <a
             href={link.url}
             {...EXTERNAL}
@@ -61,6 +61,19 @@ export function SocialLinkList({ links }: { links: DisplayLink[] }) {
             <span className="truncate">{link.label}</span>
             <ExternalLink className="text-muted-foreground shrink-0" />
           </a>
+          {/* The folder for this one account, next to the account it belongs
+              to. Absent on links added before per-link folders existed. */}
+          {link.driveUrl ? (
+            <a
+              href={link.driveUrl}
+              {...EXTERNAL}
+              aria-label={`Open the Google Drive folder for ${link.label}`}
+              title={`Google Drive — ${link.label}`}
+              className={buttonVariants({ variant: "ghost", size: "icon", className: "size-8" })}
+            >
+              <GoogleDriveIcon />
+            </a>
+          ) : null}
         </li>
       ))}
     </ul>
