@@ -16,7 +16,7 @@ import { formatDayMonth } from "@/lib/content"
 import { getOwnCalendarSummary } from "@/lib/content-queries"
 import { formProgress } from "@/lib/onboarding"
 import { getOwnForm } from "@/lib/onboarding-queries"
-import { can, isTeamRole, ROLE_LABELS } from "@/lib/rbac"
+import { can, displayNameFor, isTeamRole, ROLE_LABELS } from "@/lib/rbac"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { DriveButton, SocialLinkList } from "./clients/_components/client-links"
@@ -31,7 +31,7 @@ const RECENT_CLIENTS = 6
 
 export default async function DashboardPage() {
   const actor = await requireActor()
-  const firstName = (actor.name ?? actor.email).split(" ")[0]
+  const firstName = displayNameFor(actor).split(" ")[0]
 
   // A client sees their own workspace, not the agency-wide overview.
   if (!isTeamRole(actor.role)) {
@@ -63,7 +63,7 @@ export default async function DashboardPage() {
           <Avatar className="size-12 shrink-0">
             {actor.avatarUrl ? <AvatarImage src={actor.avatarUrl} alt="" /> : null}
             <AvatarFallback className="text-base">
-              {(actor.name ?? actor.email).charAt(0).toUpperCase()}
+              {displayNameFor(actor).charAt(0).toUpperCase()}
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0">

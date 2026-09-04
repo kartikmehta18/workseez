@@ -1,5 +1,6 @@
 import { Header } from "@/components/ui/header-2"
 import { getCurrentActor } from "@/lib/auth"
+import { displayNameFor } from "@/lib/rbac"
 
 export async function Navbar() {
   const actor = await getCurrentActor()
@@ -8,7 +9,7 @@ export async function Navbar() {
       user={
         actor
           ? {
-              name: actor.name ?? actor.email,
+              name: displayNameFor(actor),
               email: actor.email,
               picture: actor.avatarUrl,
             }

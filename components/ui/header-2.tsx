@@ -9,7 +9,7 @@ import { MenuToggleIcon } from '@/components/ui/menu-toggle-icon';
 import { useScroll } from '@/components/ui/use-scroll';
 
 /** Just enough of the signed-in user for the marketing header to render. */
-type HeaderUser = { name: string; email: string; picture?: string | null };
+type HeaderUser = { name: string; email: string | null; picture?: string | null };
 
 function Avatar({ user, className }: { user: HeaderUser; className?: string }) {
 	if (user.picture) {

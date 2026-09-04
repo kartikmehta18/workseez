@@ -376,7 +376,9 @@ export async function clearAccessKey(userId: string) {
 export type KeySignInResult =
   | {
       ok: true
-      user: { id: string; email: string; name: string | null; avatarUrl: string | null }
+      // email is null for a client added without one — key-only access, which
+      // is exactly the case this sign-in path exists for.
+      user: { id: string; email: string | null; name: string | null; avatarUrl: string | null }
     }
   | { ok: false; error: "invalid" | "account_disabled" }
 

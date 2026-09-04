@@ -161,7 +161,7 @@ export default async function ClientProfilePage({ params }: { params: Promise<{ 
                 notes: client.notes,
                 status: client.status,
                 driveUrl: client.driveUrl,
-                links: client.links.map(({ label, url }) => ({ label, url })),
+                links: client.links.map(({ label, url, driveUrl }) => ({ label, url, driveUrl })),
                 ownerEmail: client.owner?.email ?? "",
                 ownerStatus: client.owner?.status ?? "INVITED",
               }}
@@ -197,13 +197,13 @@ export default async function ClientProfilePage({ params }: { params: Promise<{ 
                 {client.owner.accessKeySetAt ? (
                   <ViewKeyButton
                     target={{ kind: "client", id: client.id }}
-                    description={client.owner.email}
+                    description={client.owner.email ?? undefined}
                   />
                 ) : null}
                 <GenerateKeyButton
                   target={{ kind: "client", id: client.id }}
                   label={client.owner.accessKeySetAt ? "Send new key" : "Generate key"}
-                  description={client.owner.email}
+                  description={client.owner.email ?? undefined}
                 />
               </div>
               <p className="text-muted-foreground text-xs">
@@ -216,11 +216,22 @@ export default async function ClientProfilePage({ params }: { params: Promise<{ 
           {client.owner?.status === "INVITED" ? (
             <div className="bg-muted mt-4 rounded-md p-3">
               <p className="text-muted-foreground text-xs">
-                This client hasn&apos;t signed in yet. They get in either by signing in with
-                Google as exactly {client.owner.email}, or with the 6-digit key from their
-                invite email.
+                {client.owner.email ? (
+                  <>
+                    This client hasn&apos;t signed in yet. They get in either by signing in with
+                    Google as exactly {client.owner.email}, or with the 6-digit key from their
+                    invite email.
+                  </>
+                ) : (
+                  <>
+                    This client hasn&apos;t signed in yet. With no email on file the 6-digit key
+                    is their only way in — use Send new key above if they no longer have it.
+                  </>
+                )}
               </p>
-              {canEdit ? (
+              {/* Resending needs an address to resend to; without one the key
+                  buttons above are the whole story. */}
+              {canEdit && client.owner.email ? (
                 <div className="mt-3">
                   <ResendInviteButton clientId={client.id} />
                 </div>

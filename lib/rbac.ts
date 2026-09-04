@@ -23,8 +23,10 @@ export type ClientStatus = (typeof CLIENT_STATUSES)[number]
 export const SUPER_ADMIN_EMAIL =
   process.env.SUPER_ADMIN_EMAIL?.toLowerCase() ?? "kartikmehta650@gmail.com"
 
-export function isSuperAdminEmail(email: string) {
-  return email.toLowerCase() === SUPER_ADMIN_EMAIL
+export function isSuperAdminEmail(email: string | null | undefined) {
+  // Null-tolerant: a client created without an email has no address to match,
+  // and must never fall through to the bootstrap owner.
+  return !!email && email.toLowerCase() === SUPER_ADMIN_EMAIL
 }
 
 export type Permission =
@@ -111,11 +113,21 @@ const PERMISSIONS: Record<Role, Permission[]> = {
 
 export type Actor = {
   id: string
-  email: string
+  // Null for a client who was added without one — the access key is their login.
+  email: string | null
   name: string | null
   avatarUrl: string | null
   role: Role
   status: UserStatus
+}
+
+/**
+ * What to call someone on screen. Falls back through name, then address, then
+ * a neutral label — the last step is reached only by a client who was added
+ * without an email, whose login is their access key.
+ */
+export function displayNameFor(user: { name?: string | null; email?: string | null }): string {
+  return user.name?.trim() || user.email || "Client"
 }
 
 export function can(actor: Actor | null, permission: Permission) {

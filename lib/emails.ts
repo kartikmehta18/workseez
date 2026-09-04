@@ -160,7 +160,7 @@ function renderLayout({
 const asText = (lines: string[]) => lines.join("\n")
 
 type InviteInput = {
-  to: string
+  to: string | null
   name?: string | null
   /** The admin or manager who created the account. */
   invitedBy?: string | null
@@ -205,6 +205,10 @@ export async function sendTeamInviteEmail({
   role,
   accessKey,
 }: InviteInput & { role: Role }) {
+  // Team members are always invited by address, so this is unreachable in
+  // practice — it satisfies the shared, now-nullable InviteInput.
+  if (!to) return false
+
   const loginUrl = `${appOrigin()}/login`
   const roleLabel = ROLE_LABELS[role]
 
@@ -243,6 +247,10 @@ export async function sendClientInviteEmail({
   company,
   accessKey,
 }: InviteInput & { company?: string | null }) {
+  // Bail before rendering: the templates below interpolate the address into
+  // the "two ways in" paragraph, which has nothing to say without one.
+  if (!to) return false
+
   const loginUrl = `${appOrigin()}/login`
 
   const html = renderLayout({
@@ -287,12 +295,14 @@ export async function sendAccessKeyEmail({
   accessKey,
   issuedBy,
 }: {
-  to: string
+  to: string | null
   name?: string | null
   accessKey: string
   /** The admin who generated it; omitted when the person did it themselves. */
   issuedBy?: string | null
 }) {
+  if (!to) return false
+
   const loginUrl = `${appOrigin()}/login`
 
   const html = renderLayout({
@@ -342,16 +352,16 @@ export async function sendAccessKeyRequestEmail({
   roleLabel,
   hasKey,
 }: {
-  /** One or more admin addresses. */
-  to: string
+  /** One or more admin addresses, or null when not one of them has an email. */
+  to: string | null
   requesterName: string | null
-  requesterEmail: string
+  requesterEmail: string | null
   roleLabel: string
   /** False when they have no key at all — a first issue rather than a reset. */
   hasKey: boolean
 }) {
   const url = `${appOrigin()}/dashboard/settings/access`
-  const who = requesterName?.trim() || requesterEmail
+  const who = requesterName?.trim() || requesterEmail || "A workspace member"
 
   const html = renderLayout({
     preheader: `${who} is asking for a new access key.`,
@@ -366,7 +376,7 @@ export async function sendAccessKeyRequestEmail({
     ],
     details: [
       { label: "Who", value: who },
-      { label: "Email", value: requesterEmail },
+      { label: "Email", value: requesterEmail ?? "—" },
       { label: "Role", value: roleLabel },
     ],
     buttonLabel: "Open User Access",

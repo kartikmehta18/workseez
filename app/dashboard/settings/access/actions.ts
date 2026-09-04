@@ -194,7 +194,7 @@ export async function requestAccessKey(): Promise<ActionResult> {
   }
 
   const emailed = await sendAccessKeyRequestEmail({
-    to: admins.map((admin) => admin.email).join(", "),
+    to: admins.flatMap((admin) => admin.email ?? []).join(", ") || null,
     requesterName: actor.name,
     requesterEmail: actor.email,
     roleLabel: ROLE_LABELS[actor.role],
@@ -324,7 +324,7 @@ export async function setUserStatus(formData: FormData): Promise<ActionResult> {
 
 export type TeamMember = {
   id: string
-  email: string
+  email: string | null
   name: string | null
   role: Role
   status: string

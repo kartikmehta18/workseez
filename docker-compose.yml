@@ -1,0 +1,59 @@
+# Local production-parity run, and the shape Railway's compose import expects.
+#
+# Railway itself deploys from the Dockerfile, not from this file — see
+# railway.json. Compose is what makes the *same* image runnable here first:
+#   docker compose up --build
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Secrets stay out of this file and out of the image. Locally they come
+    # from .env; on Railway they are service variables set in the dashboard.
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      # Pinned so the port mapping below is stable. Railway overrides PORT.
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    healthcheck:
+      # The marketing page at / is the only route that needs no session. Probed
+      # with node's global fetch rather than wget/curl so this keeps working if
+      # the image's base ever changes — busybox has wget, debian-slim does not.
+      test:
+        ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # next start has to boot and warm the first render before this counts.
+      start_period: 40s
+
+  # Opt-in throwaway database, off unless asked for:
+  #   docker compose --profile local-db up --build
+  # The app normally talks to the managed MariaDB in DATABASE_URL, so this is
+  # only for trying migrations or a schema change without touching that one.
+  # Point DATABASE_URL at it when you do:
+  #   mysql://portal:portal@db:3306/portal
+  db:
+    profiles: ["local-db"]
+    image: mariadb:11
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: portal
+      MARIADB_USER: portal
+      MARIADB_PASSWORD: portal
+    volumes:
+      - db-data:/var/lib/mysql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  db-data:

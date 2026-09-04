@@ -259,10 +259,16 @@ function KeyDialog({
           <DialogTitle>{shown?.mode === "issued" ? "New access key" : "Access key"}</DialogTitle>
           <DialogDescription>
             {description ? `For ${description}. ` : null}
+            {/* Every call site passes the account's address as `description`,
+                so its absence is what tells a client with no email apart from
+                a send that failed. Both end in "pass it on yourself", but only
+                one of them means the mail settings are worth checking. */}
             {shown?.mode === "issued"
               ? shown.emailed
                 ? "It's on its way by email as well."
-                : "The email couldn't be sent, so pass this on yourself."
+                : description
+                  ? "The email couldn't be sent, so pass this on yourself."
+                  : "There's no email on file, so pass this on yourself."
               : "This is the key on the account right now."}
           </DialogDescription>
         </DialogHeader>

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { ROLE_LABELS, isRole } from "@/lib/rbac"
 import { setClientManager } from "../../actions"
 
-type TeamMember = { id: string; name: string | null; email: string; role: string }
+type TeamMember = { id: string; name: string | null; email: string | null; role: string }
 
 export function ManagerAssignment({
   clientId,
