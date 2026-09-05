@@ -25,8 +25,8 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import {
-  CONTENT_KINDS,
   CONTENT_KIND_LABELS,
+  contentKindsForPlatform,
   CONTENT_PLATFORMS,
   CONTENT_PLATFORM_LABELS,
   CONTENT_STATUS_HINTS,
@@ -157,6 +157,14 @@ function NewPostForm({
     if (!statusesForKind(next).includes(status)) setStatus(defaultStatusForKind(next))
   }
 
+  const changePlatform = (value: string) => {
+    const next = toContentPlatform(value)
+    setPlatform(next)
+    if (!contentKindsForPlatform(next).includes(kind)) {
+      changeKind(contentKindsForPlatform(next)[0])
+    }
+  }
+
   return (
     <form action={onSubmit}>
       <input type="hidden" name="calendarId" value={calendarId} />
@@ -185,27 +193,12 @@ function NewPostForm({
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="grid gap-2">
-            <Label htmlFor="new-post-kind">Type</Label>
-            <Select value={kind} onValueChange={changeKind}>
-              <SelectTrigger id="new-post-kind">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CONTENT_KINDS.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {CONTENT_KIND_LABELS[option]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
 
           <div className="grid gap-2">
             <Label htmlFor="new-post-platform">Platform</Label>
             <Select
               value={platform}
-              onValueChange={(value) => setPlatform(toContentPlatform(value))}
+              onValueChange={changePlatform}
             >
               <SelectTrigger id="new-post-platform">
                 <SelectValue />
@@ -214,6 +207,22 @@ function NewPostForm({
                 {CONTENT_PLATFORMS.map((option) => (
                   <SelectItem key={option} value={option}>
                     {CONTENT_PLATFORM_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="new-post-kind">Type</Label>
+            <Select value={kind} onValueChange={changeKind}>
+              <SelectTrigger id="new-post-kind">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {contentKindsForPlatform(platform).map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {CONTENT_KIND_LABELS[option]}
                   </SelectItem>
                 ))}
               </SelectContent>

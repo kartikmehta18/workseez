@@ -18,7 +18,20 @@ import { can, type Actor } from "@/lib/rbac"
  * separate axis: it says where the work is, not who can see it.
  */
 
-export const CONTENT_KINDS = ["REEL", "POST", "CAROUSEL", "STORY", "YOUTUBE"] as const
+export const CONTENT_KINDS = [
+  "REEL",
+  "POST",
+  "CAROUSEL",
+  "STORY",
+  "YOUTUBE",
+  "INFOGRAPHIC",
+  "THREAD",
+  "VIDEO",
+  "MEME",
+  "NEWSLETTER",
+  "SHORTS",
+  "NOT_DECIDED",
+] as const
 export type ContentKind = (typeof CONTENT_KINDS)[number]
 
 export const CONTENT_KIND_LABELS: Record<ContentKind, string> = {
@@ -27,6 +40,13 @@ export const CONTENT_KIND_LABELS: Record<ContentKind, string> = {
   CAROUSEL: "Carousel",
   STORY: "Story",
   YOUTUBE: "YouTube",
+  INFOGRAPHIC: "Infographic",
+  THREAD: "Thread",
+  VIDEO: "Video",
+  MEME: "Meme",
+  NEWSLETTER: "Newsletter",
+  SHORTS: "Shorts",
+  NOT_DECIDED: "Not decided yet",
 }
 
 /** Plural form, for counts like "9 reels". */
@@ -36,10 +56,17 @@ export const CONTENT_KIND_PLURALS: Record<ContentKind, string> = {
   CAROUSEL: "carousels",
   STORY: "stories",
   YOUTUBE: "videos",
+  INFOGRAPHIC: "infographics",
+  THREAD: "threads",
+  VIDEO: "videos",
+  MEME: "memes",
+  NEWSLETTER: "newsletters",
+  SHORTS: "shorts",
+  NOT_DECIDED: "posts",
 }
 
 /** Which kinds are shot on camera — the ones a raw-footage upload makes sense for. */
-export const VIDEO_KINDS: ContentKind[] = ["REEL", "STORY", "YOUTUBE"]
+export const VIDEO_KINDS: ContentKind[] = ["REEL", "STORY", "YOUTUBE", "VIDEO", "SHORTS"]
 
 /**
  * The line the whole module is split along: a reel is filmed, a carousel is
@@ -64,6 +91,18 @@ export const CONTENT_PLATFORM_LABELS: Record<ContentPlatform, string> = {
   LINKEDIN: "LinkedIn",
   YOUTUBE: "YouTube",
   TWITTER: "X (Twitter)",
+}
+
+/** Types offered when creating a post for each publishing platform. */
+export const CONTENT_KINDS_BY_PLATFORM: Record<ContentPlatform, readonly ContentKind[]> = {
+  INSTAGRAM: ["REEL", "POST", "INFOGRAPHIC", "CAROUSEL", "NOT_DECIDED"],
+  LINKEDIN: ["POST", "INFOGRAPHIC", "CAROUSEL", "VIDEO", "MEME", "NEWSLETTER"],
+  YOUTUBE: ["SHORTS", "VIDEO"],
+  TWITTER: ["POST", "THREAD", "INFOGRAPHIC", "VIDEO"],
+}
+
+export function contentKindsForPlatform(platform: ContentPlatform): readonly ContentKind[] {
+  return CONTENT_KINDS_BY_PLATFORM[platform]
 }
 
 /**
