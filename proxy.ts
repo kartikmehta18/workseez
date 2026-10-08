@@ -1,12 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { decodeSession, SESSION_COOKIE } from "@/lib/session"
+import { absoluteUrl } from "@/lib/urls"
 
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl
   const user = await decodeSession(request.cookies.get(SESSION_COOKIE)?.value)
 
   if (!user) {
-    const login = new URL("/login", request.url)
+    const login = absoluteUrl("/login", request)
     login.searchParams.set("next", `${pathname}${search}`)
     return NextResponse.redirect(login)
   }

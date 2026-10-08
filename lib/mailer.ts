@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises"
 import path from "node:path"
 import nodemailer, { type Transporter } from "nodemailer"
+import { configuredOrigin } from "@/lib/urls"
 
 /**
  * SMTP is optional: a developer running the portal locally without mail
@@ -110,5 +111,5 @@ export async function sendMail({ to, subject, html, text }: MailInput): Promise<
 
 /** Absolute origin for links in emails, without a trailing slash. */
 export function appOrigin() {
-  return (process.env.APP_URL || "http://localhost:3000").replace(/\/+$/, "")
+  return configuredOrigin() || "http://localhost:3000"
 }

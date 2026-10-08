@@ -15,6 +15,7 @@ export default async function UserAccessPage() {
   const users = await listAllUsers()
   const canSetRole = can(actor, "user:setRole")
   const canDisable = can(actor, "user:disable")
+  const canDelete = can(actor, "user:delete")
   const canResetKey = can(actor, "user:resetKey")
 
   return (
@@ -43,6 +44,7 @@ export default async function UserAccessPage() {
         actorId={actor.id}
         canSetRole={canSetRole}
         canDisable={canDisable}
+        canDelete={canDelete}
         canResetKey={canResetKey}
       />
 

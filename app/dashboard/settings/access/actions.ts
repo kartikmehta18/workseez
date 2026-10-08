@@ -322,6 +322,47 @@ export async function setUserStatus(formData: FormData): Promise<ActionResult> {
   return { ok: true }
 }
 
+/** Permanently removes an account and, for clients, their owned client profile. */
+export async function deleteUser(formData: FormData): Promise<ActionResult> {
+  const actor = await getCurrentActor()
+  const denied = guard(
+    () => assertCan(actor, "user:delete"),
+    "Only the Super Admin can delete accounts.",
+  )
+  if (denied) return denied
+
+  const userId = String(formData.get("userId") ?? "")
+  if (!userId) return fail("Missing user.")
+  if (userId === actor!.id) return fail("You can't delete your own account.")
+
+  const target = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      email: true,
+      ownedClient: { select: { id: true } },
+    },
+  })
+  if (!target) return fail("User not found.")
+  if (isSuperAdminEmail(target.email)) {
+    return fail("The Super Admin account cannot be deleted.")
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // A client profile is the account's owned data; deleting it first lets the
+    // schema cascades remove its links, forms, strategy and content records.
+    if (target.ownedClient) {
+      await tx.client.delete({ where: { id: target.ownedClient.id } })
+    }
+    await tx.user.delete({ where: { id: userId } })
+  })
+
+  revalidatePath("/dashboard/settings/access")
+  revalidatePath("/dashboard/clients")
+  revalidatePath("/dashboard")
+  refresh()
+  return { ok: true }
+}
+
 export type TeamMember = {
   id: string
   email: string | null

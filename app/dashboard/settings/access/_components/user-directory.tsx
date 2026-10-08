@@ -1,7 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { Search, UsersRound, X } from "lucide-react"
+import { Search, Trash2, UsersRound, X } from "lucide-react"
+import { toast } from "sonner"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -18,7 +19,7 @@ import { displayNameFor, isSuperAdminEmail, ROLE_LABELS, ROLES, type Role } from
 import { cn } from "@/lib/utils"
 import { InviteStatusBadge, RoleBadge } from "../../../_components/status-badges"
 import { GenerateKeyButton, ViewKeyButton } from "../../../_components/generate-key-button"
-import type { TeamMember } from "../actions"
+import { deleteUser as deleteUserAction, type TeamMember } from "../actions"
 import { RoleSelect } from "./role-select"
 import { StatusToggle } from "./status-toggle"
 
@@ -42,16 +43,19 @@ export function UserDirectory({
   actorId,
   canSetRole,
   canDisable,
+  canDelete,
   canResetKey,
 }: {
   users: TeamMember[]
   actorId: string
   canSetRole: boolean
   canDisable: boolean
+  canDelete: boolean
   canResetKey: boolean
 }) {
   const [query, setQuery] = React.useState("")
   const [role, setRole] = React.useState<RoleFilter>("ALL")
+  const [pendingDelete, startDeleteTransition] = React.useTransition()
 
   const counts = React.useMemo(() => {
     const base: Record<RoleFilter, number> = {
@@ -84,6 +88,27 @@ export function UserDirectory({
       : user.role === "MANAGER"
         ? `${user.managedCount} assigned client${user.managedCount === 1 ? "" : "s"}`
         : "All clients"
+
+  const onDeleteUser = (user: TeamMember) => {
+    if (
+      !window.confirm(
+        `Delete ${user.name ?? user.email ?? "this user"} permanently? Their account and all data owned by it will be deleted.`,
+      )
+    ) {
+      return
+    }
+
+    startDeleteTransition(async () => {
+      const formData = new FormData()
+      formData.set("userId", user.id)
+      const result = await deleteUserAction(formData)
+      if (result.ok) {
+        toast.success("User and their data deleted.")
+      } else {
+        toast.error(result.error)
+      }
+    })
+  }
 
   return (
     <div className="mt-6">
@@ -269,6 +294,19 @@ export function UserDirectory({
                           {canDisable && !isOwner && !isSelf ? (
                             <StatusToggle userId={user.id} status={user.status} />
                           ) : null}
+                          {canDelete && !isOwner && !isSelf ? (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => onDeleteUser(user)}
+                              disabled={pendingDelete}
+                              aria-label={`Delete ${user.name ?? user.email ?? "user"}`}
+                              title="Delete user"
+                            >
+                              <Trash2 />
+                            </Button>
+                          ) : null}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -315,6 +353,7 @@ export function UserDirectory({
 
                       {(canSetRole && !isOwner) ||
                       (canDisable && !isOwner && !isSelf) ||
+                      (canDelete && !isOwner && !isSelf) ||
                       (canResetKey && user.status !== "DISABLED") ? (
                         <div className="mt-3 flex flex-wrap items-center gap-2">
                           {canResetKey && user.accessKeySetAt ? (
@@ -341,6 +380,17 @@ export function UserDirectory({
                           ) : null}
                           {canDisable && !isOwner && !isSelf ? (
                             <StatusToggle userId={user.id} status={user.status} />
+                          ) : null}
+                          {canDelete && !isOwner && !isSelf ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => onDeleteUser(user)}
+                              disabled={pendingDelete}
+                            >
+                              <Trash2 /> Delete
+                            </Button>
                           ) : null}
                         </div>
                       ) : null}

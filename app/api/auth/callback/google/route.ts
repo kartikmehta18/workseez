@@ -7,10 +7,11 @@ import {
   sessionCookieOptions,
 } from "@/lib/session"
 import { resolveUserForSignIn } from "@/lib/auth"
+import { absoluteUrl } from "@/lib/urls"
 import { OAUTH_STATE_COOKIE } from "../../signin/google/route"
 
 function failure(request: NextRequest, reason: string) {
-  const url = new URL("/login", request.url)
+  const url = absoluteUrl("/login", request)
   url.searchParams.set("error", reason)
   return NextResponse.redirect(url)
 }
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest) {
     // Invite-only: an unknown Google account never gets a session.
     if ("error" in result) return failure(request, result.error)
 
-    const response = NextResponse.redirect(new URL(redirectTo, request.url))
+    const response = NextResponse.redirect(absoluteUrl(redirectTo, request))
     response.cookies.set(
       SESSION_COOKIE,
       await encodeSession({
