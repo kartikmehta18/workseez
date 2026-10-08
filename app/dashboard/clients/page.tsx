@@ -15,14 +15,33 @@ import {
 } from "@/components/ui/table"
 import { AddClientDialog } from "./_components/add-client-dialog"
 import { DriveIconLink, SocialLinkList } from "./_components/client-links"
+import { ClientSearch } from "./_components/client-search"
 import { ClientStatusBadge, InviteStatusBadge } from "../_components/status-badges"
 
 export const metadata = { title: "Clients — Workseez" }
 
-export default async function ClientsPage() {
+export default async function ClientsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string | string[] }>
+}) {
+  const { q } = await searchParams
+  const query = (Array.isArray(q) ? q[0] : q)?.trim() ?? ""
   const actor = await requireActor()
-  const clients = await listVisibleClients(actor)
+  const allClients = await listVisibleClients(actor)
   const canCreate = can(actor, "client:create")
+
+  const needle = query.toLowerCase()
+  const clients = needle
+    ? allClients.filter((client) =>
+        [
+          client.name,
+          client.company,
+          client.owner?.email,
+          ...client.managers.flatMap((m) => [m.user.name, m.user.email]),
+        ].some((field) => field?.toLowerCase().includes(needle)),
+      )
+    : allClients
 
   return (
     <div className="mx-auto w-full max-w-6xl">
@@ -35,10 +54,21 @@ export default async function ClientsPage() {
               : "The clients you are assigned to."}
           </p>
         </div>
-        {canCreate ? <AddClientDialog /> : null}
+        <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+          {allClients.length > 0 ? <ClientSearch initialQuery={query} /> : null}
+          {canCreate ? <AddClientDialog /> : null}
+        </div>
       </div>
 
-      {clients.length === 0 ? (
+      {allClients.length > 0 && clients.length === 0 ? (
+        <div className="mt-8 rounded-lg border border-dashed p-12 text-center">
+          <Users className="text-muted-foreground mx-auto size-8" />
+          <p className="mt-3 font-medium">No clients match “{query}”</p>
+          <p className="text-muted-foreground mx-auto mt-1 max-w-sm text-sm">
+            Try a different name, company, email, or manager.
+          </p>
+        </div>
+      ) : clients.length === 0 ? (
         <div className="mt-8 rounded-lg border border-dashed p-12 text-center">
           <Users className="text-muted-foreground mx-auto size-8" />
           <p className="mt-3 font-medium">No clients yet</p>

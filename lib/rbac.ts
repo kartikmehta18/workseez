@@ -39,6 +39,7 @@ export type Permission =
   | "user:invite"
   | "user:setRole"
   | "user:disable"
+  | "user:delete"
   // Issue a fresh 6-digit access key for someone else and email it to them.
   // Held by both admin roles: it is the only way back in for a client who never
   // had a Google account, and it doubles as the unlock for a keyed-out account.
@@ -77,6 +78,7 @@ const PERMISSIONS: Record<Role, Permission[]> = {
     "user:invite",
     "user:setRole",
     "user:disable",
+    "user:delete",
     "user:resetKey",
     "settings:manage",
     "onboarding:manage",
