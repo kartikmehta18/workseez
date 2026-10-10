@@ -8,13 +8,22 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { cn } from "@/lib/utils"
+import { bodyToHtml, bodyToPlain, isRichBody } from "@/lib/rich-text"
+import { CopyButton } from "./copy-button"
+import { RichTextEditor } from "./rich-text-editor"
 import {
   CONTENT_KIND_LABELS,
+  CONTENT_BODY_ALIASES,
   contentBlockTitle,
+  contentBodyLabel,
+  countWords,
   defaultScriptLabels,
   isVideoKind,
+  MAX_DESCRIPTION_WORDS,
   MAX_SCRIPT_LINES,
   type ContentKind,
+  type ContentPlatform,
 } from "@/lib/content"
 
 /**
@@ -70,7 +79,11 @@ export function toDraft(script: { id: string; label: string; body: string }[]): 
  * ------------------------------------------------------------------ */
 
 const TITLE_ALIASES = ["title", "headline"]
-const CONTENT_ALIASES = ["content", "copy"]
+const CONTENT_ALIASES = CONTENT_BODY_ALIASES
+
+/** LinkedIn only: any number of extra notes, each saved as a row under this label. */
+const NOTE_LABEL = "Additional notes"
+const isNoteRow = (line: DraftLine) => line.label.trim().toLowerCase() === NOTE_LABEL.toLowerCase()
 
 function findByLabel(lines: DraftLine[], aliases: string[]) {
   return lines.find((line) => aliases.includes(line.label.trim().toLowerCase())) ?? null
@@ -102,6 +115,7 @@ function withoutEmptyAutoRows(lines: DraftLine[]) {
 export function PostContentEditor({
   idPrefix,
   kind,
+  platform,
   initialLines,
   originalKind,
   reseedOnKindChange = false,
@@ -109,6 +123,8 @@ export function PostContentEditor({
   /** Namespaces the aria labels, so two dialogs on a page stay distinguishable. */
   idPrefix: string
   kind: ContentKind
+  /** Decides what the copy field is called, and whether it is word-limited. */
+  platform: ContentPlatform
   initialLines: DraftLine[]
   /**
    * The kind this post is *stored* as. Only the edit dialog passes it, and only
@@ -200,7 +216,7 @@ export function PostContentEditor({
     ])
   }
 
-  const title = contentBlockTitle(kind)
+  const title = contentBlockTitle(kind, platform)
 
   if (!isVideo) {
     // Non-null by construction: every path that leaves `kind` on a designed
@@ -209,10 +225,27 @@ export function PostContentEditor({
     const titleRow = findByLabel(draft, TITLE_ALIASES)!
     const contentRow = findByLabel(draft, CONTENT_ALIASES)!
 
+    // On LinkedIn the copy is the post: it is called the description, capped
+    // in words, and copyable so it can be pasted straight in.
+    const isLinkedIn = platform === "LINKEDIN"
+    const bodyLabel = contentBodyLabel(platform)
+    const words = countWords(bodyToPlain(contentRow.body))
+    const overLimit = isLinkedIn && words > MAX_DESCRIPTION_WORDS
+    const noteRows = isLinkedIn ? draft.filter(isNoteRow) : []
+
     /** Writes one of the two rows, matched on the key this render drew. */
     const writeRow = (key: string, body: string) =>
       setLines((current) =>
         current.map((line) => (line.key === key ? { ...line, body, auto: undefined } : line)),
+      )
+
+    // Starts as an auto row, so one added and left blank is neither saved nor
+    // carried over to a script if the type is switched.
+    const addNote = () =>
+      setLines((current) =>
+        current.length >= MAX_SCRIPT_LINES
+          ? current
+          : [...current, { key: newKey(), id: null, label: NOTE_LABEL, body: "", auto: true }],
       )
 
     /**
@@ -223,7 +256,11 @@ export function PostContentEditor({
       originalKind !== undefined &&
       isVideoKind(originalKind) &&
       draft.some(
-        (line) => line !== titleRow && line !== contentRow && line.body.trim().length > 0,
+        (line) =>
+          line !== titleRow &&
+          line !== contentRow &&
+          !noteRows.includes(line) &&
+          line.body.trim().length > 0,
       )
 
     return (
@@ -231,8 +268,10 @@ export function PostContentEditor({
         <div className="border-b px-4 py-3">
           <h3 className="text-sm font-medium">{title}</h3>
           <p className="text-muted-foreground text-xs">
-            The headline and the copy that goes out with it. Links are made tappable for the client
-            automatically.
+            {isLinkedIn
+              ? "The post as it goes out on LinkedIn."
+              : "The headline and the copy that goes out with it."}{" "}
+            Links are made tappable for the client automatically.
           </p>
         </div>
 
@@ -241,32 +280,133 @@ export function PostContentEditor({
               here rather than typed, which is the whole difference between this
               face and the script. Carrying lineId keeps the row's identity, so
               editing a carousel updates its two lines instead of churning them. */}
-          <div className="grid gap-2">
-            <Label htmlFor={`${idPrefix}-content-title`}>Title</Label>
-            <input type="hidden" name="lineId" value={titleRow.id ?? ""} />
-            <input type="hidden" name="lineLabel" value="Title" />
-            <Input
-              id={`${idPrefix}-content-title`}
-              name="lineBody"
-              value={titleRow.body}
-              onChange={(event) => writeRow(titleRow.key, event.target.value)}
-              placeholder="The headline for this one."
-            />
-          </div>
+          {isLinkedIn ? (
+            // No title field on LinkedIn. One written before it was removed is
+            // carried through the save rather than silently deleted.
+            titleRow.body.trim() ? (
+              <>
+                <input type="hidden" name="lineId" value={titleRow.id ?? ""} />
+                <input type="hidden" name="lineLabel" value="Title" />
+                <input type="hidden" name="lineBody" value={titleRow.body} />
+              </>
+            ) : null
+          ) : (
+            <div className="grid gap-2">
+              <Label htmlFor={`${idPrefix}-content-title`}>Title</Label>
+              <input type="hidden" name="lineId" value={titleRow.id ?? ""} />
+              <input type="hidden" name="lineLabel" value="Title" />
+              <Input
+                id={`${idPrefix}-content-title`}
+                name="lineBody"
+                value={titleRow.body}
+                onChange={(event) => writeRow(titleRow.key, event.target.value)}
+                placeholder="The headline for this one."
+              />
+            </div>
+          )}
 
           <div className="grid gap-2">
-            <Label htmlFor={`${idPrefix}-content-body`}>Content</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label id={`${idPrefix}-content-body-label`} htmlFor={`${idPrefix}-content-body`}>
+                {bodyLabel}
+              </Label>
+              {isLinkedIn ? (
+                <CopyButton
+                  text={bodyToPlain(contentRow.body)}
+                  html={isRichBody(contentRow.body) ? bodyToHtml(contentRow.body) : undefined}
+                  label={bodyLabel}
+                />
+              ) : null}
+            </div>
             <input type="hidden" name="lineId" value={contentRow.id ?? ""} />
-            <input type="hidden" name="lineLabel" value="Content" />
-            <Textarea
-              id={`${idPrefix}-content-body`}
-              name="lineBody"
-              value={contentRow.body}
-              onChange={(event) => writeRow(contentRow.key, event.target.value)}
-              placeholder="The copy — one slide per line for a carousel, or the post itself."
-              className="min-h-32 resize-y"
-            />
+            <input type="hidden" name="lineLabel" value={bodyLabel} />
+            {isLinkedIn ? (
+              <>
+                {/* The description keeps formatting — bold, lists, headings —
+                    so what is pasted from a doc is what gets saved. The box is
+                    not a form field itself; this hidden input posts its body. */}
+                <input type="hidden" name="lineBody" value={contentRow.body} />
+                <RichTextEditor
+                  key={contentRow.key}
+                  id={`${idPrefix}-content-body`}
+                  labelledBy={`${idPrefix}-content-body-label`}
+                  initialBody={contentRow.body}
+                  onChange={(body) => writeRow(contentRow.key, body)}
+                  placeholder="The post itself — what goes out on LinkedIn."
+                  invalid={overLimit}
+                />
+              </>
+            ) : (
+              <Textarea
+                id={`${idPrefix}-content-body`}
+                name="lineBody"
+                // Plain text here: a description formatted on LinkedIn and then
+                // moved to another platform arrives as its text, not its markup.
+                value={bodyToPlain(contentRow.body)}
+                onChange={(event) => writeRow(contentRow.key, event.target.value)}
+                placeholder="The copy — one slide per line for a carousel, or the post itself."
+                className="min-h-32 resize-y"
+              />
+            )}
+            {isLinkedIn ? (
+              <p
+                className={cn(
+                  "text-xs",
+                  overLimit ? "text-destructive font-medium" : "text-muted-foreground",
+                )}
+              >
+                {words.toLocaleString()} / {MAX_DESCRIPTION_WORDS.toLocaleString()} words
+                {overLimit ? " — over the limit, shorten it before saving." : ""}
+              </p>
+            ) : null}
           </div>
+
+          {isLinkedIn ? (
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <Label>{NOTE_LABEL}</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={draft.length >= MAX_SCRIPT_LINES}
+                  onClick={addNote}
+                >
+                  <Plus /> Add
+                </Button>
+              </div>
+
+              {noteRows.map((note, index) => {
+                // A blank note posts nothing: without names its inputs stay out
+                // of the form, so the three parallel arrays still line up.
+                const filled = note.body.trim().length > 0
+                return (
+                  <div key={note.key} className="flex items-start gap-2">
+                    <input type="hidden" name={filled ? "lineId" : undefined} value={note.id ?? ""} />
+                    <input type="hidden" name={filled ? "lineLabel" : undefined} value={NOTE_LABEL} />
+                    <Textarea
+                      name={filled ? "lineBody" : undefined}
+                      value={note.body}
+                      onChange={(event) => writeRow(note.key, event.target.value)}
+                      placeholder="Anything else worth noting on this post."
+                      aria-label={`${idPrefix} additional note ${index + 1}`}
+                      className="min-h-16 resize-y"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="text-muted-foreground hover:text-destructive size-8 shrink-0"
+                      onClick={() => removeLine(note.key)}
+                      aria-label={`Remove additional note ${index + 1}`}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
 
           {leavingScript ? (
             <p className="text-muted-foreground text-xs">

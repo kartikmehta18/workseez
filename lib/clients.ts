@@ -1,6 +1,6 @@
 import { cache } from "react"
 import { prisma } from "@/lib/db"
-import { can, type Actor } from "@/lib/rbac"
+import { can, canSeeClientEmail, type Actor } from "@/lib/rbac"
 
 /**
  * The scoping rule for client data, in one place so no page can forget it:
@@ -15,6 +15,39 @@ export function clientScopeFor(actor: Actor) {
 }
 
 /**
+ * Hides a client's login email from everyone but the Super Admin — and the
+ * client themselves, on their own profile.
+ *
+ * Done here, on the row, rather than in each page: a value that reaches a page
+ * reaches the browser, whether or not anything renders it. `hasEmail` survives
+ * the redaction so the UI can still tell "has an address" from "key-only".
+ */
+function withOwnerEmailScope<
+  T extends { owner: { id: string; email: string | null } | null },
+>(actor: Actor, client: T) {
+  const { owner } = client
+  if (!owner) return { ...client, owner: null }
+  const visible = canSeeClientEmail(actor) || owner.id === actor.id
+  return {
+    ...client,
+    owner: { ...owner, email: visible ? owner.email : null, hasEmail: owner.email !== null },
+  }
+}
+
+/**
+ * The same redaction for the list queries that select the owner without an id.
+ */
+export function redactOwnerEmails<T extends { owner: { email: string | null } | null }>(
+  actor: Actor,
+  clients: T[],
+): T[] {
+  if (canSeeClientEmail(actor)) return clients
+  return clients.map((client) =>
+    client.owner ? { ...client, owner: { ...client.owner, email: null } } : client,
+  )
+}
+
+/**
  * `take` is optional so the two callers can ask for what they actually render:
  * the clients page lists everything, the dashboard overview shows six.
  */
@@ -22,7 +55,7 @@ export const listVisibleClients = cache(async function listVisibleClients(
   actor: Actor,
   take?: number,
 ) {
-  return prisma.client.findMany({
+  const clients = await prisma.client.findMany({
     where: clientScopeFor(actor),
     orderBy: { createdAt: "desc" },
     ...(take === undefined ? {} : { take }),
@@ -32,6 +65,7 @@ export const listVisibleClients = cache(async function listVisibleClients(
       links: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
     },
   })
+  return clients.map((client) => withOwnerEmailScope(actor, client))
 })
 
 /**
@@ -65,7 +99,7 @@ export const getVisibleClient = cache(async function getVisibleClient(
   actor: Actor,
   clientId: string,
 ) {
-  return prisma.client.findFirst({
+  const client = await prisma.client.findFirst({
     where: { AND: [{ id: clientId }, clientScopeFor(actor)] },
     include: {
       owner: {
@@ -85,4 +119,5 @@ export const getVisibleClient = cache(async function getVisibleClient(
       links: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
     },
   })
+  return client ? withOwnerEmailScope(actor, client) : null
 })

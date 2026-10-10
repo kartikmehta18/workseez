@@ -395,6 +395,14 @@ model ContentPost {
   caption String? @db.Text
   notes   String? @db.Text
 
+  // The client's verdict on the post: APPROVED | REJECTED, or null while they
+  // have not said. A separate axis from `status` — status is where the work
+  // is, this is whether the client is happy with it. The note is the optional
+  // reason given with a rejection.
+  approval     String?
+  approvalNote String?   @db.Text
+  approvalAt   DateTime?
+
   // Direct links to the finished files, pasted or filled in by an upload.
   rawFileUrl   String? @db.Text
   finalEditUrl String? @db.Text

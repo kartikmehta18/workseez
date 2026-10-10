@@ -12,22 +12,30 @@ import {
   sendContentStatusEmail,
 } from "@/lib/emails"
 import { assertCan, can, ForbiddenError, type Actor } from "@/lib/rbac"
+import { bodyToPlain, cleanSubmittedBody } from "@/lib/rich-text"
 import {
   CONTENT_KIND_LABELS,
   CONTENT_STATUS_LABELS,
+  countWords,
   DEFAULT_CYCLE_LENGTH,
   defaultStatusForKind,
   formatDayMonth,
+  isContentBodyLabel,
   isContentKind,
   isContentPlatform,
   isContentStatus,
+  isLiveStatus,
+  isVideoKind,
   MAX_COMMENT_LENGTH,
+  MAX_DESCRIPTION_WORDS,
   MAX_SCRIPT_LINES,
   parseDateInput,
   seedScriptLines,
   statusesForKind,
   toContentKind,
+  toContentPlatform,
   toContentStatus,
+  toPostApproval,
   toPostDetail,
   type ContentKind,
   type ContentPlatform,
@@ -89,6 +97,7 @@ async function loadManageablePost(actor: Actor, postId: string) {
       id: true,
       title: true,
       kind: true,
+      platform: true,
       status: true,
       sharedAt: true,
       scheduledFor: true,
@@ -316,7 +325,9 @@ function parseScriptLines(formData: FormData): ParsedLine[] | { error: string } 
   const lines: ParsedLine[] = []
   for (let i = 0; i < labels.length; i++) {
     const label = labels[i].trim()
-    const body = bodies[i].trim()
+    // A formatted body is rebuilt from an allow-list here, whatever the form
+    // sent — this is the point every saved line passes through.
+    const body = cleanSubmittedBody(bodies[i].trim())
     if (!label && !body) continue
     if (!label) return { error: "Every script line needs a label." }
     lines.push({ id: ids[i] || null, label, body })
@@ -352,13 +363,13 @@ function parsePostFields(formData: FormData): PostFields | { error: string } {
 
   // The fallback follows the kind — a carousel arriving without a status starts
   // at the top of its own track, not on a step it is not allowed to be on.
-  const status = String(formData.get("status") ?? defaultStatusForKind(kind))
+  const status = String(formData.get("status") ?? defaultStatusForKind(kind, platform))
   if (!isContentStatus(status)) return { error: "Pick a status." }
   // The two tracks share only PUBLISHED, so a mismatched pair is not merely odd
   // — it writes a status the post's own dropdown cannot offer, which then shows
   // up in a list nobody can move it out of. The dialogs already prevent this;
   // this is the same rule where it can actually be relied on.
-  if (!statusesForKind(kind).includes(status)) {
+  if (!statusesForKind(kind, platform).includes(status)) {
     return { error: "That status doesn't apply to this content type." }
   }
 
@@ -378,6 +389,20 @@ function parsePostFields(formData: FormData): PostFields | { error: string } {
     rawFolderUrl: url("rawFolderUrl"),
     editsFolderUrl: url("editsFolderUrl"),
   }
+}
+
+/**
+ * A LinkedIn description is capped in words. The dialog counts as it is typed;
+ * this is the same limit where it cannot be skipped.
+ */
+function descriptionError(fields: PostFields, lines: ParsedLine[]): string | null {
+  if (fields.platform !== "LINKEDIN" || isVideoKind(fields.kind)) return null
+  const tooLong = lines.some(
+    (line) => isContentBodyLabel(line.label) && countWords(bodyToPlain(line.body)) > MAX_DESCRIPTION_WORDS,
+  )
+  return tooLong
+    ? `The description is limited to ${MAX_DESCRIPTION_WORDS.toLocaleString("en-US")} words.`
+    : null
 }
 
 /**
@@ -402,6 +427,9 @@ export async function createPost(formData: FormData): Promise<ActionResult> {
 
   const lines = parseScriptLines(formData)
   if (!Array.isArray(lines)) return fail(lines.error)
+
+  const tooLong = descriptionError(fields, lines)
+  if (tooLong) return fail(tooLong)
 
   const publishNow = formData.get("publishNow") === "on"
 
@@ -477,6 +505,9 @@ export async function savePost(formData: FormData): Promise<ActionResult> {
   const lines = parseScriptLines(formData)
   if (!Array.isArray(lines)) return fail(lines.error)
 
+  const tooLong = descriptionError(fields, lines)
+  if (tooLong) return fail(tooLong)
+
   // Ids are assigned here rather than by the database so the whole script can be
   // written with a fixed number of statements — the same approach the strategy
   // builder takes. Existing ids are reused, so a line keeps its identity across
@@ -513,7 +544,7 @@ export async function savePost(formData: FormData): Promise<ActionResult> {
     }),
   ])
 
-  if (existing.sharedAt && fields.status === "PUBLISHED" && existing.status !== "PUBLISHED") {
+  if (existing.sharedAt && isLiveStatus(fields.status) && !isLiveStatus(existing.status)) {
     notifyClientStatus(
       existing.calendar.clientId,
       { ...fields, scheduledFor: fields.scheduledFor },
@@ -540,7 +571,9 @@ export async function setPostStatus(formData: FormData): Promise<ActionResult> {
   if (!post) return fail("Post not found.")
   if (post.status === status) return { ok: true }
   // Same rule as parsePostFields, against the kind already on the row.
-  if (!statusesForKind(toContentKind(post.kind)).includes(status)) {
+  if (
+    !statusesForKind(toContentKind(post.kind), toContentPlatform(post.platform)).includes(status)
+  ) {
     return fail("That status doesn't apply to this content type.")
   }
 
@@ -551,12 +584,12 @@ export async function setPostStatus(formData: FormData): Promise<ActionResult> {
       // Reaching PUBLISHED means it is live, so the shoot request that got it
       // there is spent — leaving the call-out up would ask the client for
       // footage on a reel that has already gone out.
-      needsRawUpload: status === "PUBLISHED" ? false : post.needsRawUpload,
+      needsRawUpload: isLiveStatus(status) ? false : post.needsRawUpload,
     },
     select: { title: true, kind: true, status: true, scheduledFor: true, needsRawUpload: true },
   })
 
-  if (post.sharedAt && status === "PUBLISHED") {
+  if (post.sharedAt && isLiveStatus(status)) {
     notifyClientStatus(post.calendar.clientId, updated, post.status)
   }
 
@@ -700,6 +733,91 @@ export async function addPostComment(formData: FormData): Promise<ActionResult> 
   }
 
   revalidateCalendar(post.calendar.clientId)
+  return { ok: true }
+}
+
+/**
+ * The client's approve / reject on a post, and the way back to undecided.
+ *
+ * Gated on ownership rather than a permission, like the strategy sheet's
+ * sign-off: it is the client's own call. The team can set it too — a client who
+ * approves over a call still needs it recorded — and can clear it once a
+ * rejected post has been reworked.
+ *
+ * The reason is optional and only kept with a rejection.
+ */
+export async function setPostApproval(formData: FormData): Promise<ActionResult> {
+  const actor = await getCurrentActor()
+  if (!actor || actor.status !== "ACTIVE") return fail("Your session has expired. Sign in again.")
+
+  const decision = toPostApproval(String(formData.get("decision") ?? ""))
+  const reason = String(formData.get("reason") ?? "").trim()
+  if (reason.length > MAX_COMMENT_LENGTH) {
+    return fail(`The reason is limited to ${MAX_COMMENT_LENGTH} characters.`)
+  }
+
+  const post = await prisma.contentPost.findUnique({
+    where: { id: String(formData.get("postId") ?? "") },
+    select: {
+      id: true,
+      title: true,
+      sharedAt: true,
+      approval: true,
+      calendar: {
+        select: { clientId: true, client: { select: { name: true, ownerUserId: true } } },
+      },
+    },
+  })
+  if (!post) return fail("Post not found.")
+
+  const clientId = post.calendar.clientId
+  const isOwner = post.calendar.client.ownerUserId === actor.id
+  const canManage =
+    can(actor, "content:manage") &&
+    (await prisma.client.count({ where: { AND: [{ id: clientId }, clientScopeFor(actor)] } })) > 0
+
+  if (!isOwner && !canManage) return fail("You don't have permission to approve this post.")
+  // There is nothing to approve in a post the client has not been shown.
+  if (!post.sharedAt) return fail("This post hasn't been published to the client yet.")
+
+  await prisma.contentPost.update({
+    where: { id: post.id },
+    data: {
+      approval: decision,
+      approvalNote: decision === "REJECTED" ? reason || null : null,
+      approvalAt: decision ? new Date() : null,
+    },
+  })
+
+  // The Super Admin hears about the client's verdict the same way they hear
+  // about their feedback. Clearing a decision is not news, and neither is the team
+  // recording one itself.
+  if (decision && isOwner && !canManage) {
+    after(async () => {
+      try {
+        const recipients = await calendarRecipients(clientId)
+        const excerpt =
+          decision === "APPROVED"
+            ? "Approved this post."
+            : reason
+              ? `Rejected this post: ${reason.length > 400 ? `${reason.slice(0, 400)}…` : reason}`
+              : "Rejected this post."
+        for (const member of recipients?.team ?? []) {
+          await sendContentFeedbackEmail({
+            to: member.email,
+            clientName: post.calendar.client.name,
+            postTitle: post.title,
+            excerpt,
+            clientId,
+          })
+        }
+      } catch (error) {
+        console.error("[content] approval notification failed", error)
+      }
+    })
+  }
+
+  revalidateCalendar(clientId)
   return { ok: true }
 }
 

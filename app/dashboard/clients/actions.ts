@@ -7,6 +7,7 @@ import { issueAccessKey, revealAccessKey, validateChosenAccessKey } from "@/lib/
 import { sendAccessKeyEmail, sendClientInviteEmail } from "@/lib/emails"
 import {
   assertCan,
+  canSeeClientEmail,
   CLIENT_STATUSES,
   displayNameFor,
   ForbiddenError,
@@ -232,7 +233,10 @@ export async function updateClient(formData: FormData): Promise<ActionResult> {
   // access key becomes their only way in — the same state a client added
   // without an address starts in.
   const owner = client.owner
-  const emailChanged = owner ? email !== owner.email : false
+  // Only the Super Admin sees the address, so only they can change it. For
+  // anyone else the form carries no email field at all, and reading its absence
+  // as "cleared" would wipe the login of every client an admin edits.
+  const emailChanged = owner && canSeeClientEmail(actor) ? email !== owner.email : false
   if (owner && emailChanged && email) {
     if (!EMAIL_PATTERN.test(email)) return fail("Enter a valid email address.")
     if (isSuperAdminEmail(email)) return fail("That email belongs to the Super Admin account.")

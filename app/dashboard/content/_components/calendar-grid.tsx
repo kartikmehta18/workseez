@@ -43,6 +43,9 @@ const DOT_STYLES: Record<ContentStatus, string> = {
   CAPTIONING: "bg-orange-100 text-orange-800 hover:bg-orange-200",
   SCHEDULED: "bg-sky-100 text-sky-800 hover:bg-sky-200",
   PUBLISHED: "bg-emerald-100 text-emerald-800 hover:bg-emerald-200",
+  TO_BE_POSTED: "bg-amber-100 text-amber-800 hover:bg-amber-200",
+  POSTED: "bg-emerald-100 text-emerald-800 hover:bg-emerald-200",
+  OTHER: "bg-slate-100 text-slate-800 hover:bg-slate-200",
 }
 
 /** The legend's swatch — the chip colour without the interactive states. */
@@ -56,6 +59,9 @@ const LEGEND_STYLES: Record<ContentStatus, string> = {
   CAPTIONING: "bg-orange-200",
   SCHEDULED: "bg-sky-200",
   PUBLISHED: "bg-emerald-200",
+  TO_BE_POSTED: "bg-amber-200",
+  POSTED: "bg-emerald-200",
+  OTHER: "bg-slate-200",
 }
 
 /** yyyy-mm-dd in local time, matching PostView.scheduledDate. */
@@ -136,11 +142,8 @@ export function CalendarGrid({
     [cursor],
   )
 
-  /** Only the statuses actually on screen — a key to eight colours explains nothing. */
-  const legend = React.useMemo(
-    () => CONTENT_STATUSES.filter((status) => posts.some((post) => post.status === status)),
-    [posts],
-  )
+  /** Every status, always — the key stays the same whatever is on screen. */
+  const legend = CONTENT_STATUSES
 
   const shift = (delta: number) =>
     setCursor((current) => new Date(current.getFullYear(), current.getMonth() + delta, 1))
@@ -220,7 +223,7 @@ export function CalendarGrid({
                 <div
                   key={key}
                   className={cn(
-                    "group/day flex min-h-28 flex-col p-1.5",
+                    "group/day relative flex min-h-28 flex-col p-1.5",
                     // Hairlines only between squares, never around the outside —
                     // the container's own border is the frame.
                     index % 7 !== 0 && "border-l",
@@ -234,7 +237,7 @@ export function CalendarGrid({
                       chips inside it for the eye. */}
                   <span
                     className={cn(
-                      "mb-1 grid size-5 shrink-0 place-items-center rounded-full text-xs tabular-nums",
+                      "pointer-events-none relative z-10 mb-1 grid size-5 shrink-0 place-items-center rounded-full text-xs tabular-nums",
                       isToday && "bg-primary text-primary-foreground font-semibold",
                       !isToday && inMonth && "text-foreground/70",
                       !isToday && !inMonth && "text-muted-foreground/50",
@@ -243,23 +246,31 @@ export function CalendarGrid({
                     {date.getDate()}
                   </span>
 
-                  <div className="space-y-1">
-                    {entries.map((post) => (
-                      <button
-                        key={post.id}
-                        type="button"
-                        onClick={() => onSelect(post.id)}
-                        title={`${CONTENT_KIND_LABELS[post.kind]} · ${CONTENT_STATUS_LABELS[post.status]} — ${post.title}`}
-                        className={cn(
-                          "flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-[11px] leading-tight font-medium transition-colors",
-                          DOT_STYLES[post.status],
-                        )}
-                      >
-                        <PlatformDot platform={post.platform} className="size-1.5" />
-                        <span className="truncate">{post.title}</span>
-                      </button>
-                    ))}
-                  </div>
+                  {/* The post is the square: its status colour fills the whole
+                      day and its title sits in the middle. A day with more
+                      than one post splits into equal bands, one each. The date
+                      and the add button are drawn over the top. */}
+                  {entries.length > 0 ? (
+                    <div className="divide-background absolute inset-0 flex flex-col divide-y-2">
+                      {entries.map((post) => (
+                        <button
+                          key={post.id}
+                          type="button"
+                          onClick={() => onSelect(post.id)}
+                          title={`${CONTENT_KIND_LABELS[post.kind]} · ${CONTENT_STATUS_LABELS[post.status]} — ${post.title}`}
+                          className={cn(
+                            "focus-visible:ring-ring flex min-h-0 w-full flex-1 items-center justify-center gap-1 px-2 text-center text-[11px] leading-tight font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset",
+                            DOT_STYLES[post.status],
+                          )}
+                        >
+                          <PlatformDot platform={post.platform} className="size-1.5 shrink-0" />
+                          <span className={entries.length > 2 ? "truncate" : "line-clamp-2"}>
+                            {post.title}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
 
                   {/* Sits at the foot of the square whatever is above it, so the
                       button is in the same place in every column. Kept faint
@@ -274,7 +285,7 @@ export function CalendarGrid({
                         day: "numeric",
                         month: "long",
                       })}`}
-                      className="text-muted-foreground/40 hover:bg-muted hover:text-foreground focus-visible:ring-ring/50 group-hover/day:text-muted-foreground/80 group-focus-within/day:text-muted-foreground/80 mt-auto flex items-center justify-center gap-1 rounded py-1 text-[11px] font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                      className="text-muted-foreground/40 hover:bg-muted hover:text-foreground focus-visible:ring-ring/50 group-hover/day:text-muted-foreground/80 group-focus-within/day:text-muted-foreground/80 relative z-10 mt-auto flex items-center justify-center gap-1 rounded py-1 text-[11px] font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none"
                     >
                       <Plus className="size-3" />
                       <span className="opacity-0 transition-opacity group-hover/day:opacity-100 group-focus-within/day:opacity-100">
@@ -289,16 +300,14 @@ export function CalendarGrid({
         </div>
       </div>
 
-      {legend.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t px-4 py-2.5">
-          {legend.map((status) => (
-            <span key={status} className="text-muted-foreground flex items-center gap-1.5 text-xs">
-              <span className={cn("size-2.5 rounded-full", LEGEND_STYLES[status])} />
-              {CONTENT_STATUS_LABELS[status]}
-            </span>
-          ))}
-        </div>
-      ) : null}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t px-4 py-2.5">
+        {legend.map((status) => (
+          <span key={status} className="text-muted-foreground flex items-center gap-1.5 text-xs">
+            <span className={cn("size-2.5 rounded-full", LEGEND_STYLES[status])} />
+            {CONTENT_STATUS_LABELS[status]}
+          </span>
+        ))}
+      </div>
 
       {undated.length > 0 ? (
         <div className="border-t px-4 py-3">

@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, CalendarDays, ClipboardList, Target } from "luci
 import { prisma } from "@/lib/db"
 import { getCurrentActor, requireActor } from "@/lib/auth"
 import { getVisibleClient } from "@/lib/clients"
-import { can } from "@/lib/rbac"
+import { can, canSeeClientEmail } from "@/lib/rbac"
 import { calendarProgress } from "@/lib/content"
 import { formProgress } from "@/lib/onboarding"
 import { sheetProgress } from "@/lib/strategy"
@@ -52,6 +52,11 @@ export default async function ClientProfilePage({ params }: { params: Promise<{ 
   const canEdit = can(actor, "client:edit")
   const canAssign = can(actor, "client:assignManager")
   const canResetKey = can(actor, "user:resetKey")
+  // Super Admin only. For everyone else the row arrives with the address already
+  // stripped, so `hasEmail` is what says whether one is on file.
+  const showEmail = canSeeClientEmail(actor)
+  const keyDescription =
+    client.owner?.email ?? (client.owner?.hasEmail ? client.name : undefined)
   // One wave, not four. These reads have nothing to do with each other — the
   // questionnaire, the strategy sheet, the calendar and the assignable team
   // are four independent rows — but awaiting them in sequence meant four
@@ -163,6 +168,7 @@ export default async function ClientProfilePage({ params }: { params: Promise<{ 
                 driveUrl: client.driveUrl,
                 links: client.links.map(({ label, url, driveUrl }) => ({ label, url, driveUrl })),
                 ownerEmail: client.owner?.email ?? "",
+                canEditEmail: showEmail,
                 ownerStatus: client.owner?.status ?? "INVITED",
               }}
             />
@@ -174,8 +180,12 @@ export default async function ClientProfilePage({ params }: { params: Promise<{ 
         <section className="rounded-lg border p-5 lg:col-span-2">
           <h2 className="font-medium">Portal access</h2>
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-[150px_1fr]">
-            <dt className="text-muted-foreground">Login email</dt>
-            <dd className="break-all">{client.owner?.email ?? "—"}</dd>
+            {showEmail ? (
+              <>
+                <dt className="text-muted-foreground">Login email</dt>
+                <dd className="break-all">{client.owner?.email ?? "—"}</dd>
+              </>
+            ) : null}
             <dt className="text-muted-foreground">Status</dt>
             <dd>
               <InviteStatusBadge status={client.owner?.status ?? "INVITED"} />
@@ -197,13 +207,13 @@ export default async function ClientProfilePage({ params }: { params: Promise<{ 
                 {client.owner.accessKeySetAt ? (
                   <ViewKeyButton
                     target={{ kind: "client", id: client.id }}
-                    description={client.owner.email ?? undefined}
+                    description={keyDescription}
                   />
                 ) : null}
                 <GenerateKeyButton
                   target={{ kind: "client", id: client.id }}
                   label={client.owner.accessKeySetAt ? "Send new key" : "Generate key"}
-                  description={client.owner.email ?? undefined}
+                  description={keyDescription}
                 />
               </div>
               <p className="text-muted-foreground text-xs">
@@ -216,11 +226,11 @@ export default async function ClientProfilePage({ params }: { params: Promise<{ 
           {client.owner?.status === "INVITED" ? (
             <div className="bg-muted mt-4 rounded-md p-3">
               <p className="text-muted-foreground text-xs">
-                {client.owner.email ? (
+                {client.owner.hasEmail ? (
                   <>
                     This client hasn&apos;t signed in yet. They get in either by signing in with
-                    Google as exactly {client.owner.email}, or with the 6-digit key from their
-                    invite email.
+                    Google as {client.owner.email ? `exactly ${client.owner.email}` : "their login email"},
+                    or with the 6-digit key from their invite email.
                   </>
                 ) : (
                   <>
@@ -231,7 +241,7 @@ export default async function ClientProfilePage({ params }: { params: Promise<{ 
               </p>
               {/* Resending needs an address to resend to; without one the key
                   buttons above are the whole story. */}
-              {canEdit && client.owner.email ? (
+              {canEdit && client.owner.hasEmail ? (
                 <div className="mt-3">
                   <ResendInviteButton clientId={client.id} />
                 </div>

@@ -45,6 +45,43 @@ export function isGoogleDriveUrl(url: string): boolean {
   }
 }
 
+/**
+ * The embeddable preview for a Google Drive link, or null when the link is not
+ * one Drive can show in a frame.
+ *
+ * Built from the file or folder id alone rather than by rewriting the pasted
+ * URL: the id is checked against Drive's own alphabet, so whatever else was in
+ * the link — query strings, a different host path — never reaches the frame's
+ * `src`. Drive decides who may see the preview; a file the viewer has no access
+ * to shows Google's "request access" page instead.
+ */
+export function drivePreviewUrl(url: string | null | undefined): string | null {
+  if (!url || !isGoogleDriveUrl(url)) return null
+
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+
+  const id = (value: string | null | undefined) =>
+    value && /^[A-Za-z0-9_-]{10,}$/.test(value) ? value : null
+  const path = parsed.pathname
+
+  // Docs, Sheets and Slides preview on their own host.
+  const doc = /^\/(document|spreadsheets|presentation)\/d\/([^/]+)/.exec(path)
+  if (parsed.hostname === "docs.google.com" && doc && id(doc[2])) {
+    return `https://docs.google.com/${doc[1]}/d/${doc[2]}/preview`
+  }
+
+  const folder = id(/\/folders\/([^/]+)/.exec(path)?.[1])
+  if (folder) return `https://drive.google.com/embeddedfolderview?id=${folder}#grid`
+
+  const file = id(/\/file\/d\/([^/]+)/.exec(path)?.[1]) ?? id(parsed.searchParams.get("id"))
+  return file ? `https://drive.google.com/file/d/${file}/preview` : null
+}
+
 /** A short, human label for a URL when the admin didn't supply one. */
 export function labelFromUrl(url: string): string {
   try {

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db"
-import { clientScopeFor } from "@/lib/clients"
+import { clientScopeFor, redactOwnerEmails } from "@/lib/clients"
 import { type Actor } from "@/lib/rbac"
 
 /**
@@ -64,7 +64,7 @@ export async function getOwnForm(actor: Actor) {
 
 /** Every client this actor can see, with just enough form state for a list view. */
 export async function listFormOverviews(actor: Actor) {
-  return prisma.client.findMany({
+  const clients = await prisma.client.findMany({
     where: clientScopeFor(actor),
     orderBy: { createdAt: "desc" },
     select: {
@@ -92,4 +92,5 @@ export async function listFormOverviews(actor: Actor) {
       },
     },
   })
+  return redactOwnerEmails(actor, clients)
 }

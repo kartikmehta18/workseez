@@ -171,3 +171,12 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
 export function isTeamRole(role: Role) {
   return role !== "CLIENT"
 }
+
+/**
+ * A client's login email is the Super Admin's to see and nobody else's. The
+ * rest of the team works from the client's name; mail still reaches the client
+ * because the server sends it without showing the address.
+ */
+export function canSeeClientEmail(actor: Actor | null) {
+  return !!actor && actor.status === "ACTIVE" && actor.role === "SUPER_ADMIN"
+}

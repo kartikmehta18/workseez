@@ -1,5 +1,5 @@
 import { SiInstagram, SiX, SiYoutube } from "@icons-pack/react-simple-icons"
-import { Clapperboard, Upload } from "lucide-react"
+import { Check, Clapperboard, Upload, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -13,6 +13,7 @@ import {
   toContentStatus,
   type ContentPlatform,
   type ContentStatus,
+  type PostApproval,
 } from "@/lib/content"
 
 /**
@@ -47,11 +48,49 @@ const STATUS_STYLES: Record<ContentStatus, string> = {
   CAPTIONING: "border-orange-200 bg-orange-50 text-orange-700",
   SCHEDULED: "border-sky-200 bg-sky-50 text-sky-700",
   PUBLISHED: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  TO_BE_POSTED: "border-amber-200 bg-amber-50 text-amber-700",
+  POSTED: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  OTHER: "border-slate-200 bg-slate-50 text-slate-700",
+}
+
+/** The solid version of each status colour, for the dot beside its name. */
+const STATUS_DOTS: Record<ContentStatus, string> = {
+  SCRIPTING: "bg-amber-500",
+  SHOOT_PENDING: "bg-rose-500",
+  IN_PRODUCTION: "bg-indigo-500",
+  CONTENT_TOPICS: "bg-amber-500",
+  CONTENT_RESEARCH: "bg-violet-500",
+  DESIGNING: "bg-indigo-500",
+  CAPTIONING: "bg-orange-500",
+  SCHEDULED: "bg-sky-500",
+  PUBLISHED: "bg-emerald-500",
+  TO_BE_POSTED: "bg-amber-500",
+  POSTED: "bg-emerald-500",
+  OTHER: "bg-slate-400",
+}
+
+/**
+ * A status as a select option: its colour dot and its name. The select shows
+ * the chosen option's content in its field, so the dot appears there too.
+ */
+export function StatusOption({ status }: { status: ContentStatus }) {
+  return (
+    <span className="flex items-center gap-2">
+      <span aria-hidden className={cn("size-2 shrink-0 rounded-full", STATUS_DOTS[status])} />
+      {CONTENT_STATUS_LABELS[status]}
+    </span>
+  )
+}
+
+/** Tints a status select's field with the same colours the badge uses. */
+export function statusFieldClass(status: ContentStatus) {
+  return cn("font-medium", STATUS_STYLES[status])
 }
 
 export function PostStatusBadge({
   status,
   kind,
+  platform,
   className,
 }: {
   status: string | null | undefined
@@ -63,6 +102,8 @@ export function PostStatusBadge({
    * the query.
    */
   kind?: string | null
+  /** Passed alongside `kind` — LinkedIn posts have a track of their own. */
+  platform?: string | null
   className?: string
 }) {
   if (!status) {
@@ -72,7 +113,11 @@ export function PostStatusBadge({
       </Badge>
     )
   }
-  const resolved = normalizeStatusForKind(toContentKind(kind), toContentStatus(status))
+  const resolved = normalizeStatusForKind(
+    toContentKind(kind),
+    toContentPlatform(platform),
+    toContentStatus(status),
+  )
   return (
     <Badge
       variant="secondary"
@@ -83,6 +128,25 @@ export function PostStatusBadge({
       )}
     >
       {CONTENT_STATUS_LABELS[resolved]}
+    </Badge>
+  )
+}
+
+/** The client's verdict, shown on the card once there is one. */
+export function ApprovalBadge({ approval }: { approval: PostApproval | null }) {
+  if (!approval) return null
+  return (
+    <Badge
+      variant="secondary"
+      className={cn(
+        "text-[11px] font-semibold tracking-wide uppercase",
+        approval === "APPROVED"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          : "border-rose-200 bg-rose-50 text-rose-700",
+      )}
+    >
+      {approval === "APPROVED" ? <Check className="size-3" /> : <X className="size-3" />}
+      {approval === "APPROVED" ? "Approved" : "Rejected"}
     </Badge>
   )
 }

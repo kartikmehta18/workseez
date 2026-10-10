@@ -36,6 +36,8 @@ type ClientFields = {
   links: LinkRow[]
   ownerEmail: string
   ownerStatus: string
+  /** Super Admin only. Without it the address is neither shown nor sent. */
+  canEditEmail: boolean
 }
 
 export function EditClientDialog({ client }: { client: ClientFields }) {
@@ -78,13 +80,15 @@ export function EditClientDialog({ client }: { client: ClientFields }) {
   }
 
   // Reset the local email field whenever the dialog reopens, so a cancelled
-  // edit doesn't leave a stale value behind.
-  React.useEffect(() => {
-    if (open) setEmail(client.ownerEmail)
-  }, [open, client.ownerEmail])
+  // edit doesn't leave a stale value behind. Done in the open handler rather
+  // than an effect, which would paint the stale value first and then correct it.
+  function onOpenChange(next: boolean) {
+    if (next) setEmail(client.ownerEmail)
+    setOpen(next)
+  }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
         <Button variant="outline">
           <Pencil /> Edit
@@ -108,36 +112,38 @@ export function EditClientDialog({ client }: { client: ClientFields }) {
               <Label htmlFor="edit-company">Company</Label>
               <Input id="edit-company" name="company" defaultValue={client.company ?? ""} />
             </div>
-            <div className="grid content-start gap-2">
-              <Label htmlFor="edit-email">
-                Login email <span className="text-muted-foreground font-normal">(optional)</span>
-              </Label>
-              <Input
-                id="edit-email"
-                name="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-              {emailChanged && !email.trim() ? (
-                <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-                  Clearing the address removes Google sign-in for this client. Their access key
-                  becomes the only way in, and a fresh one is issued on save — the old key stops
-                  working, so pass the new one on yourself.
-                </p>
-              ) : emailChanged ? (
-                <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
-                  Changing the login email rebinds portal access. The client will need to sign in
-                  with Google using the new address
-                  {client.ownerStatus === "ACTIVE" ? ", and their current access is reset" : ""}. A
-                  fresh invite is emailed to it on save.
-                </p>
-              ) : (
-                <p className="text-muted-foreground text-xs">
-                  The Google account this client signs in with. Blank means key-only access.
-                </p>
-              )}
-            </div>
+            {client.canEditEmail ? (
+              <div className="grid content-start gap-2">
+                <Label htmlFor="edit-email">
+                  Login email <span className="text-muted-foreground font-normal">(optional)</span>
+                </Label>
+                <Input
+                  id="edit-email"
+                  name="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+                {emailChanged && !email.trim() ? (
+                  <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+                    Clearing the address removes Google sign-in for this client. Their access key
+                    becomes the only way in, and a fresh one is issued on save — the old key stops
+                    working, so pass the new one on yourself.
+                  </p>
+                ) : emailChanged ? (
+                  <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+                    Changing the login email rebinds portal access. The client will need to sign in
+                    with Google using the new address
+                    {client.ownerStatus === "ACTIVE" ? ", and their current access is reset" : ""}. A
+                    fresh invite is emailed to it on save.
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground text-xs">
+                    The Google account this client signs in with. Blank means key-only access.
+                  </p>
+                )}
+              </div>
+            ) : null}
             <div className="grid content-start gap-2">
               <Label htmlFor="edit-status">Status</Label>
               <Select name="status" defaultValue={client.status}>

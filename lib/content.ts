@@ -1,4 +1,5 @@
 import { can, type Actor } from "@/lib/rbac"
+import { bodyToPlain } from "@/lib/rich-text"
 
 /**
  * Content calendar — constants, types and pure helpers.
@@ -125,6 +126,10 @@ export const CONTENT_STATUSES = [
   "CAPTIONING",
   "SCHEDULED",
   "PUBLISHED",
+  // LinkedIn's own short track — see LINKEDIN_STATUSES.
+  "TO_BE_POSTED",
+  "POSTED",
+  "OTHER",
 ] as const
 export type ContentStatus = (typeof CONTENT_STATUSES)[number]
 
@@ -138,6 +143,9 @@ export const CONTENT_STATUS_LABELS: Record<ContentStatus, string> = {
   CAPTIONING: "Captioning",
   SCHEDULED: "Scheduled",
   PUBLISHED: "Published",
+  TO_BE_POSTED: "To be posted",
+  POSTED: "Posted",
+  OTHER: "Other",
 }
 
 /**
@@ -172,7 +180,23 @@ const STATIC_STATUSES: ContentStatus[] = [
 ]
 
 /**
- * Which statuses a given type can be in — its track and nothing else.
+ * LinkedIn runs on a track of its own, whatever the type: the work there is
+ * tracked by where the post is in the queue rather than by how it gets made.
+ * SCHEDULED is shared with the filmed track; the rest exist only here.
+ */
+const LINKEDIN_STATUSES: ContentStatus[] = ["SCHEDULED", "TO_BE_POSTED", "POSTED", "OTHER"]
+
+/**
+ * The statuses that mean "this has gone out" — PUBLISHED on the two production
+ * tracks, POSTED on LinkedIn's. Everything that asks whether a post is live
+ * (the client email, the progress bar, the "what's next" lists) asks this.
+ */
+export function isLiveStatus(status: string) {
+  return status === "PUBLISHED" || status === "POSTED"
+}
+
+/**
+ * Which statuses a given post can be in — its track and nothing else.
  *
  * There is deliberately no escape hatch for a value already on the row. A
  * carousel must never offer "Scripting", not even because that is what it
@@ -180,7 +204,8 @@ const STATIC_STATUSES: ContentStatus[] = [
  * vocabulary is never on the menu. `normalizeStatusForKind` is what keeps a row
  * like that renderable instead.
  */
-export function statusesForKind(kind: ContentKind): ContentStatus[] {
+export function statusesForKind(kind: ContentKind, platform: ContentPlatform): ContentStatus[] {
+  if (platform === "LINKEDIN") return LINKEDIN_STATUSES
   return isVideoKind(kind) ? VIDEO_STATUSES : STATIC_STATUSES
 }
 
@@ -193,16 +218,25 @@ export function statusesForKind(kind: ContentKind): ContentStatus[] {
  * first step of the track it does belong to. The row itself catches up on its
  * next save, or in bulk via the migration that moves them.
  */
-export function normalizeStatusForKind(kind: ContentKind, status: ContentStatus): ContentStatus {
-  return statusesForKind(kind).includes(status) ? status : defaultStatusForKind(kind)
+export function normalizeStatusForKind(
+  kind: ContentKind,
+  platform: ContentPlatform,
+  status: ContentStatus,
+): ContentStatus {
+  const track = statusesForKind(kind, platform)
+  if (track.includes(status)) return status
+  // A post that had already gone out stays gone out on the track it moves to —
+  // a LinkedIn post saved as Published reads as Posted, not as back in the queue.
+  if (isLiveStatus(status)) return track.find(isLiveStatus) ?? track[0]
+  return track[0]
 }
 
 /**
  * Where a post of this type starts — and where a post drops back to when its
  * type changes to one its current status doesn't belong to.
  */
-export function defaultStatusForKind(kind: ContentKind): ContentStatus {
-  return statusesForKind(kind)[0]
+export function defaultStatusForKind(kind: ContentKind, platform: ContentPlatform): ContentStatus {
+  return statusesForKind(kind, platform)[0]
 }
 
 /** One line of explanation per status, shown wherever the status is chosen. */
@@ -214,8 +248,22 @@ export const CONTENT_STATUS_HINTS: Record<ContentStatus, string> = {
   CONTENT_RESEARCH: "Topic is set — gathering the angle and the references.",
   DESIGNING: "With the designer.",
   CAPTIONING: "Made — writing the caption that goes out with it.",
-  SCHEDULED: "Caption approved and queued to go out.",
+  SCHEDULED: "Approved and queued to go out.",
   PUBLISHED: "Live on the client's account.",
+  TO_BE_POSTED: "Ready — waiting to go out.",
+  POSTED: "Live on the client's LinkedIn.",
+  OTHER: "Doesn't fit the usual steps — see the notes.",
+}
+
+/**
+ * The client's verdict on a post. Null — not one of these — means they have not
+ * said yet, which is where every post starts.
+ */
+export const POST_APPROVALS = ["APPROVED", "REJECTED"] as const
+export type PostApproval = (typeof POST_APPROVALS)[number]
+
+export function toPostApproval(value: string | null | undefined): PostApproval | null {
+  return value === "APPROVED" || value === "REJECTED" ? value : null
 }
 
 export const ASSET_KINDS = ["RAW", "EDIT"] as const
@@ -295,8 +343,37 @@ export function defaultScriptLabels(kind: ContentKind): readonly string[] {
  * What the block is called wherever it is shown — the editor heading, the card
  * heading on both sides, and the sentence shown when it is still empty.
  */
-export function contentBlockTitle(kind: ContentKind) {
-  return isVideoKind(kind) ? "Script" : "Content"
+export function contentBlockTitle(kind: ContentKind, platform: ContentPlatform) {
+  if (isVideoKind(kind)) return "Script"
+  return contentBodyLabel(platform)
+}
+
+/**
+ * What the copy field of a designed post is called. On LinkedIn the copy *is*
+ * the post, so it is the description there and there is no separate caption.
+ */
+export function contentBodyLabel(platform: ContentPlatform) {
+  return platform === "LINKEDIN" ? "Description" : "Content"
+}
+
+/** LinkedIn has no caption of its own — the description is what goes out. */
+export function hasCaption(platform: ContentPlatform) {
+  return platform !== "LINKEDIN"
+}
+
+/** Every label the copy row of a designed post has been saved under. */
+export const CONTENT_BODY_ALIASES = ["content", "copy", "description"]
+
+export function isContentBodyLabel(label: string) {
+  return CONTENT_BODY_ALIASES.includes(label.trim().toLowerCase())
+}
+
+/** How long a LinkedIn description may run. */
+export const MAX_DESCRIPTION_WORDS = 1800
+
+export function countWords(text: string) {
+  const trimmed = text.trim()
+  return trimmed ? trimmed.split(/\s+/).length : 0
 }
 
 /**
@@ -305,13 +382,17 @@ export function contentBlockTitle(kind: ContentKind) {
  * "Final edit" and "Edits folder" only make sense on the video track. On a post
  * or a carousel they are the final post and the folder it lives in.
  *
- * `rawFileUrl` keeps its name on both tracks: it is whatever went in, footage
- * or source file.
+ * `rawFileUrl` is whatever went in, footage or source file — except on
+ * LinkedIn, where that slot simply holds the post's Drive link.
  */
-export function contentLinkLabels(kind: ContentKind) {
+export function contentLinkLabels(kind: ContentKind, platform: ContentPlatform) {
+  const raw =
+    platform === "LINKEDIN"
+      ? { raw: "Drive link", rawLink: "Drive link" }
+      : { raw: "Raw file", rawLink: "Raw file link" }
   return isVideoKind(kind)
-    ? { final: "Final edit", folder: "Edits folder", folderHint: "Where the finished cuts live" }
-    : { final: "Final post", folder: "Post folder", folderHint: "Where the finished posts live" }
+    ? { ...raw, final: "Final edit", folder: "Edits folder", folderHint: "Where the finished cuts live" }
+    : { ...raw, final: "Final post", folder: "Post folder", folderHint: "Where the finished posts live" }
 }
 
 /** Nested create payload for a new post's script skeleton. */
@@ -572,6 +653,9 @@ type LoadedListPost = {
   needsRawUpload: boolean
   caption: string | null
   notes: string | null
+  approval: string | null
+  approvalNote: string | null
+  approvalAt: Date | null
   rawFileUrl: string | null
   finalEditUrl: string | null
   rawFolderUrl: string | null
@@ -610,6 +694,12 @@ export type PostView = {
   needsRawUpload: boolean
   caption: string | null
   notes: string | null
+  /** Approved, rejected, or null while the client has not decided. */
+  approval: PostApproval | null
+  /** The reason given with a rejection, if there was one. */
+  approvalNote: string | null
+  /** When the decision was made, formatted for display. */
+  approvalLabel: string | null
   rawFileUrl: string | null
   finalEditUrl: string | null
   rawFolderUrl: string | null
@@ -658,6 +748,7 @@ function formatBytes(bytes: number | null) {
 export function toPostView(post: LoadedListPost, actor: Actor): PostView {
   const canManage = can(actor, "content:manage")
   const kind = toContentKind(post.kind)
+  const platform = toContentPlatform(post.platform)
   // Internal notes are stripped rather than merely hidden by the card: props
   // reach the browser whether or not they are rendered, so the client's payload
   // must not carry them at all — and for the same reason they stay out of the
@@ -668,17 +759,20 @@ export function toPostView(post: LoadedListPost, actor: Actor): PostView {
     id: post.id,
     title: post.title,
     kind,
-    platform: toContentPlatform(post.platform),
+    platform,
     // Read against this post's own track, so a row still holding a status from
     // before the split renders as the step it maps to rather than showing a
     // carousel as "Scripting".
-    status: normalizeStatusForKind(kind, toContentStatus(post.status)),
+    status: normalizeStatusForKind(kind, platform, toContentStatus(post.status)),
     scheduledDate: toDateInputValue(post.scheduledFor) || null,
     scheduledLabel: post.scheduledFor ? formatDayMonth(post.scheduledFor) : null,
     shared: post.sharedAt !== null,
     needsRawUpload: post.needsRawUpload,
     caption: post.caption,
     notes,
+    approval: toPostApproval(post.approval),
+    approvalNote: post.approvalNote,
+    approvalLabel: post.approvalAt ? formatDayMonth(post.approvalAt) : null,
     rawFileUrl: post.rawFileUrl,
     finalEditUrl: post.finalEditUrl,
     rawFolderUrl: post.rawFolderUrl,
@@ -689,7 +783,7 @@ export function toPostView(post: LoadedListPost, actor: Actor): PostView {
       post.title,
       post.caption ?? "",
       notes ?? "",
-      ...post.lines.flatMap((line) => [line.label, line.body]),
+      ...post.lines.flatMap((line) => [line.label, bodyToPlain(line.body)]),
     ]
       .join(" ")
       .toLowerCase(),
@@ -727,7 +821,7 @@ type CountablePost = { status: string; sharedAt: Date | null }
 export function calendarProgress(posts: CountablePost[]) {
   const total = posts.length
   const shared = posts.filter((post) => post.sharedAt !== null).length
-  const published = posts.filter((post) => post.status === "PUBLISHED").length
+  const published = posts.filter((post) => isLiveStatus(post.status)).length
   return {
     total,
     shared,
