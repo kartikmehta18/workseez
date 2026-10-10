@@ -14,6 +14,7 @@ import {
 } from "@/lib/emails"
 import {
   assertCan,
+  canSeeClientEmail,
   ForbiddenError,
   isRole,
   isSuperAdminEmail,
@@ -184,7 +185,12 @@ export async function requestAccessKey(): Promise<ActionResult> {
   const [me, admins] = await Promise.all([
     prisma.user.findUnique({ where: { id: actor.id }, select: { accessKeySetAt: true } }),
     prisma.user.findMany({
-      where: { role: { in: ["SUPER_ADMIN", "ADMIN"] }, status: "ACTIVE" },
+      // A client's request goes to the Super Admin alone, like every other
+      // mail a client sets off; a team member's still reaches every admin.
+      where: {
+        role: actor.role === "CLIENT" ? "SUPER_ADMIN" : { in: ["SUPER_ADMIN", "ADMIN"] },
+        status: "ACTIVE",
+      },
       select: { email: true },
     }),
   ])
@@ -366,6 +372,11 @@ export async function deleteUser(formData: FormData): Promise<ActionResult> {
 export type TeamMember = {
   id: string
   email: string | null
+  /**
+   * What the access-key dialog calls this account: the address when the viewer
+   * may see it, the name when one is on file but hidden, null when there is none.
+   */
+  keyDescription: string | null
   name: string | null
   role: Role
   status: string
@@ -395,15 +406,22 @@ export async function listAllUsers(): Promise<TeamMember[]> {
     },
   })
 
-  return users.map((u) => ({
-    id: u.id,
-    email: u.email,
-    name: u.name,
-    role: isRole(u.role) ? u.role : "CLIENT",
-    status: u.status,
-    avatarUrl: u.avatarUrl,
-    ownedClientName: u.ownedClient?.name ?? null,
-    managedCount: u._count.managedClients,
-    accessKeySetAt: u.accessKeySetAt,
-  }))
+  // A client's address is the Super Admin's alone; the team's own are not hidden.
+  const hideClientEmails = !canSeeClientEmail(actor)
+
+  return users.map((u) => {
+    const hidden = hideClientEmails && u.role === "CLIENT" && u.id !== actor.id
+    return {
+      id: u.id,
+      email: hidden ? null : u.email,
+      keyDescription: hidden ? (u.email ? (u.name ?? "this client") : null) : u.email,
+      name: u.name,
+      role: isRole(u.role) ? u.role : "CLIENT",
+      status: u.status,
+      avatarUrl: u.avatarUrl,
+      ownedClientName: u.ownedClient?.name ?? null,
+      managedCount: u._count.managedClients,
+      accessKeySetAt: u.accessKeySetAt,
+    }
+  })
 }

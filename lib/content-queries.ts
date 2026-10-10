@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db"
 import type { Prisma } from "@/lib/generated/prisma/client"
-import { clientScopeFor } from "@/lib/clients"
+import { clientScopeFor, redactOwnerEmails } from "@/lib/clients"
 import { can, type Actor } from "@/lib/rbac"
 
 /**
@@ -35,6 +35,9 @@ const POST_LIST_SELECT = {
   needsRawUpload: true,
   caption: true,
   notes: true,
+  approval: true,
+  approvalNote: true,
+  approvalAt: true,
   rawFileUrl: true,
   finalEditUrl: true,
   rawFolderUrl: true,
@@ -133,6 +136,7 @@ export async function getOwnCalendarSummary(actor: Actor) {
           title: true,
           status: true,
           kind: true,
+          platform: true,
           scheduledFor: true,
           needsRawUpload: true,
         },
@@ -165,7 +169,7 @@ export async function getVisiblePost(actor: Actor, postId: string) {
 
 /** Every client this actor can see, with just enough calendar state for a list view. */
 export async function listCalendarOverviews(actor: Actor) {
-  return prisma.client.findMany({
+  const clients = await prisma.client.findMany({
     where: clientScopeFor(actor),
     orderBy: { createdAt: "desc" },
     select: {
@@ -188,6 +192,7 @@ export async function listCalendarOverviews(actor: Actor) {
               // Read with the status, never on its own: a status only means
               // something against the track its type is on.
               kind: true,
+              platform: true,
               sharedAt: true,
               scheduledFor: true,
               _count: { select: { comments: true } },
@@ -197,14 +202,16 @@ export async function listCalendarOverviews(actor: Actor) {
       },
     },
   })
+  return redactOwnerEmails(actor, clients)
 }
 
 /**
  * Who to email about a client's calendar, and who to email back.
  *
- * Team notifications go to the assigned managers plus every admin, so a client
- * uploading footage never lands in a mailbox nobody reads — a manager can be on
- * leave, and an unassigned client would otherwise notify no one at all.
+ * Mail set off by something the client did — feedback, an upload, an approval —
+ * goes to the Super Admin and nobody else. `team` is that list: it keeps its
+ * name because every caller already treats it as "who hears from the client",
+ * but managers and admins are deliberately not on it.
  */
 export async function calendarRecipients(clientId: string) {
   // Independent of each other, so they go together rather than one after the
@@ -218,27 +225,17 @@ export async function calendarRecipients(clientId: string) {
         name: true,
         company: true,
         owner: { select: { email: true, name: true, status: true } },
-        managers: {
-          select: { user: { select: { email: true, name: true, status: true } } },
-        },
       },
     }),
     prisma.user.findMany({
-      where: { role: { in: ["SUPER_ADMIN", "ADMIN"] }, status: "ACTIVE" },
+      where: { role: "SUPER_ADMIN", status: "ACTIVE" },
       select: { email: true, name: true },
     }),
   ])
   if (!client) return null
 
-  // Keyed by address, which also dedupes a manager who is themselves an admin.
-  // An account with no email (a client added without one) simply cannot be
-  // notified, so it is skipped rather than keying the map on null.
+  // Keyed by address, so two Super Admin accounts on one mailbox get one mail.
   const team = new Map<string, { email: string; name: string | null }>()
-  for (const { user } of client.managers) {
-    if (user.status !== "DISABLED" && user.email) {
-      team.set(user.email, { email: user.email, name: user.name })
-    }
-  }
   for (const admin of admins) {
     if (admin.email) team.set(admin.email, { email: admin.email, name: admin.name })
   }

@@ -33,6 +33,8 @@ import {
   CONTENT_STATUS_LABELS,
   contentLinkLabels,
   defaultStatusForKind,
+  normalizeStatusForKind,
+  hasCaption,
   statusesForKind,
   toContentKind,
   toContentPlatform,
@@ -42,6 +44,7 @@ import {
   type PostDetail,
   type PostView,
 } from "@/lib/content"
+import { StatusOption, statusFieldClass } from "./content-badges"
 import { PostContentEditor, toDraft } from "./post-content-editor"
 import { savePost } from "../actions"
 
@@ -74,7 +77,13 @@ export function PostEditor({
         </Button>
       </DialogTrigger>
       {/* See CreatePostDialog — the base dvh cap is the mobile-safe one. */}
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent
+        className="sm:max-w-3xl"
+        // A half-written post is too easy to lose to a stray click: this closes
+        // only on save, Cancel or the cross, never on the backdrop or Escape.
+        onInteractOutside={(event) => event.preventDefault()}
+        onEscapeKeyDown={(event) => event.preventDefault()}
+      >
         {/* The form is a child so its draft state is created on open and thrown
             away on close. Resetting it in an effect instead would mean the
             dialog paints last session's draft for a frame before correcting
@@ -98,13 +107,16 @@ function PostForm({
 
   const [kind, setKind] = React.useState<ContentKind>(post.kind)
   const [platform, setPlatform] = React.useState<ContentPlatform>(post.platform)
-  const [status, setStatus] = React.useState(post.status)
+  const [chosenStatus, setStatus] = React.useState(post.status)
 
   // Strictly this type's track. A post still holding a status from before the
   // split arrives already read onto its own track by toPostView, so there is
   // never a value here that the list does not contain.
-  const statuses = statusesForKind(kind)
-  const linkLabels = contentLinkLabels(kind)
+  // Read against the current type and platform, so the select can never hold a
+  // status its own list does not offer.
+  const status = normalizeStatusForKind(kind, platform, chosenStatus)
+  const statuses = statusesForKind(kind, platform)
+  const linkLabels = contentLinkLabels(kind, platform)
 
   /**
    * Switching Reel → Post moves the post onto the other track entirely, so a
@@ -116,7 +128,18 @@ function PostForm({
   const changeKind = (value: string) => {
     const next = toContentKind(value)
     setKind(next)
-    if (!statusesForKind(next).includes(status)) setStatus(defaultStatusForKind(next))
+    if (!statusesForKind(next, platform).includes(status)) {
+      setStatus(defaultStatusForKind(next, platform))
+    }
+  }
+
+  /** LinkedIn has its own statuses whatever the type, so the platform moves tracks too. */
+  const changePlatform = (value: string) => {
+    const next = toContentPlatform(value)
+    setPlatform(next)
+    if (!statusesForKind(kind, next).includes(status)) {
+      setStatus(defaultStatusForKind(kind, next))
+    }
   }
 
   const onSubmit = (formData: FormData) => {
@@ -177,10 +200,7 @@ function PostForm({
 
           <div className="grid gap-2">
             <Label htmlFor={`platform-${post.id}`}>Platform</Label>
-            <Select
-              value={platform}
-              onValueChange={(value) => setPlatform(toContentPlatform(value))}
-            >
+            <Select value={platform} onValueChange={changePlatform}>
               <SelectTrigger id={`platform-${post.id}`}>
                 <SelectValue />
               </SelectTrigger>
@@ -197,7 +217,7 @@ function PostForm({
           <div className="grid gap-2">
             <Label htmlFor={`status-${post.id}`}>Status</Label>
             <Select value={status} onValueChange={(value) => setStatus(toContentStatus(value))}>
-              <SelectTrigger id={`status-${post.id}`}>
+              <SelectTrigger id={`status-${post.id}`} className={statusFieldClass(status)}>
                 <SelectValue />
               </SelectTrigger>
               {/* Only the statuses this type can be in — a carousel is never
@@ -205,7 +225,7 @@ function PostForm({
               <SelectContent>
                 {statuses.map((option) => (
                   <SelectItem key={option} value={option}>
-                    {CONTENT_STATUS_LABELS[option]}
+                    <StatusOption status={option} />
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -245,7 +265,7 @@ function PostForm({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="grid gap-2">
-            <Label htmlFor={`raw-${post.id}`}>Raw file link</Label>
+            <Label htmlFor={`raw-${post.id}`}>{linkLabels.rawLink}</Label>
             <Input
               id={`raw-${post.id}`}
               name="rawFileUrl"
@@ -292,20 +312,27 @@ function PostForm({
         <PostContentEditor
           idPrefix="Edit"
           kind={kind}
+          platform={platform}
           initialLines={toDraft(script)}
           originalKind={post.kind}
         />
 
-        <div className="grid gap-2">
-          <Label htmlFor={`caption-${post.id}`}>Caption</Label>
-          <Textarea
-            id={`caption-${post.id}`}
-            name="caption"
-            defaultValue={post.caption ?? ""}
-            placeholder="The caption that goes out with the post."
-            className="min-h-20 resize-y"
-          />
-        </div>
+        {/* LinkedIn has no caption field. One saved before the post moved there
+            is carried through untouched rather than wiped by the save. */}
+        {hasCaption(platform) ? (
+          <div className="grid gap-2">
+            <Label htmlFor={`caption-${post.id}`}>Caption</Label>
+            <Textarea
+              id={`caption-${post.id}`}
+              name="caption"
+              defaultValue={post.caption ?? ""}
+              placeholder="The caption that goes out with the post."
+              className="min-h-20 resize-y"
+            />
+          </div>
+        ) : (
+          <input type="hidden" name="caption" value={post.caption ?? ""} />
+        )}
 
         <div className="grid gap-2">
           <Label htmlFor={`notes-${post.id}`}>Internal notes</Label>

@@ -12,7 +12,7 @@ import {
 import { prisma } from "@/lib/db"
 import { requireActor } from "@/lib/auth"
 import { listVisibleClients, visibleClientStats } from "@/lib/clients"
-import { formatDayMonth } from "@/lib/content"
+import { formatDayMonth, isLiveStatus } from "@/lib/content"
 import { getOwnCalendarSummary } from "@/lib/content-queries"
 import { formProgress } from "@/lib/onboarding"
 import { getOwnForm } from "@/lib/onboarding-queries"
@@ -54,7 +54,7 @@ export default async function DashboardPage() {
     // — that is the one thing on this page they have to act on.
     const awaitingFootage = calendar?.posts.filter((post) => post.needsRawUpload) ?? []
     const upcoming = (calendar?.posts ?? [])
-      .filter((post) => post.status !== "PUBLISHED" && !post.needsRawUpload)
+      .filter((post) => !isLiveStatus(post.status) && !post.needsRawUpload)
       .slice(0, 3)
     const calendarHighlights = [...awaitingFootage, ...upcoming].slice(0, 4)
     return (
@@ -144,7 +144,7 @@ export default async function DashboardPage() {
               <div className="mt-6 rounded-lg border">
                 <Link
                   href="/dashboard/content"
-                  className="group hover:bg-muted/40 flex flex-wrap items-center gap-2 rounded-t-lg px-4 py-3 transition-colors"
+                  className="group hover:bg-muted flex flex-wrap items-center gap-2 rounded-t-lg px-4 py-3 transition-colors"
                 >
                   <CalendarDays className="text-muted-foreground size-4 shrink-0" />
                   <p className="group-hover:text-primary text-sm font-medium transition-colors">
@@ -153,7 +153,7 @@ export default async function DashboardPage() {
                   <span className="text-muted-foreground text-xs">
                     {calendar.posts.length} {calendar.posts.length === 1 ? "post" : "posts"}
                   </span>
-                  <ArrowRight className="text-muted-foreground ml-auto size-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+                  <ArrowRight className="text-foreground/70 group-hover:text-primary ml-auto size-5 shrink-0 transition-transform group-hover:translate-x-0.5" />
                 </Link>
 
                 {awaitingFootage.length > 0 ? (
@@ -168,13 +168,20 @@ export default async function DashboardPage() {
 
                 <ul className="divide-y border-t">
                   {calendarHighlights.map((post) => (
-                    <li key={post.id} className="flex flex-wrap items-center gap-2 px-4 py-2.5">
-                      <span className="min-w-0 flex-1 truncate text-sm">{post.title}</span>
-                      {post.needsRawUpload ? <RawUploadBadge /> : null}
-                      <PostStatusBadge status={post.status} kind={post.kind} />
-                      <span className="text-muted-foreground w-14 shrink-0 text-right text-xs">
-                        {post.scheduledFor ? formatDayMonth(post.scheduledFor) : "—"}
-                      </span>
+                    <li key={post.id} className="last:overflow-hidden last:rounded-b-lg">
+                      {/* The whole row opens the calendar, so it greys on hover
+                          like the header above it. */}
+                      <Link
+                        href="/dashboard/content"
+                        className="hover:bg-muted flex flex-wrap items-center gap-2 px-4 py-2.5 transition-colors"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-sm">{post.title}</span>
+                        {post.needsRawUpload ? <RawUploadBadge /> : null}
+                        <PostStatusBadge status={post.status} kind={post.kind} platform={post.platform} />
+                        <span className="text-muted-foreground w-14 shrink-0 text-right text-xs">
+                          {post.scheduledFor ? formatDayMonth(post.scheduledFor) : "—"}
+                        </span>
+                      </Link>
                     </li>
                   ))}
                 </ul>

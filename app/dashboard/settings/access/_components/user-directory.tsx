@@ -279,7 +279,7 @@ export function UserDirectory({
                           {canResetKey && user.accessKeySetAt ? (
                             <ViewKeyButton
                               target={{ kind: "user", id: user.id }}
-                              description={user.email ?? undefined}
+                              description={user.keyDescription ?? undefined}
                               iconOnly
                             />
                           ) : null}
@@ -287,7 +287,7 @@ export function UserDirectory({
                             <GenerateKeyButton
                               target={{ kind: "user", id: user.id }}
                               label={user.accessKeySetAt ? "Send a new key" : "Give an access key"}
-                              description={user.email ?? undefined}
+                              description={user.keyDescription ?? undefined}
                               iconOnly
                             />
                           ) : null}
@@ -359,14 +359,14 @@ export function UserDirectory({
                           {canResetKey && user.accessKeySetAt ? (
                             <ViewKeyButton
                               target={{ kind: "user", id: user.id }}
-                              description={user.email ?? undefined}
+                              description={user.keyDescription ?? undefined}
                             />
                           ) : null}
                           {canResetKey && user.status !== "DISABLED" ? (
                             <GenerateKeyButton
                               target={{ kind: "user", id: user.id }}
                               label={user.accessKeySetAt ? "New key" : "Give key"}
-                              description={user.email ?? undefined}
+                              description={user.keyDescription ?? undefined}
                             />
                           ) : null}
                           {canSetRole && !isOwner ? (

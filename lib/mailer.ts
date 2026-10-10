@@ -31,21 +31,33 @@ function smtpConfig() {
  * Cached on globalThis for the same reason as the Prisma pool: the transport is
  * built at module scope, so every dev hot reload would otherwise leave another
  * pool of open SMTP connections behind.
+ *
+ * `mailTransportKey` is the config the cached transport was built from. The
+ * dev server re-reads .env when it is edited but this cache outlives that, so
+ * without the key a corrected SMTP password kept failing with the old one until
+ * the server was restarted by hand.
  */
 const globalForMail = globalThis as unknown as {
   mailTransport?: Transporter | null
+  mailTransportKey?: string
   mailLogo?: Buffer
 }
 
 function transport(): Transporter | null {
-  if (globalForMail.mailTransport !== undefined) return globalForMail.mailTransport
-
   const config = smtpConfig()
+  const key = JSON.stringify(config)
+  if (globalForMail.mailTransport !== undefined && globalForMail.mailTransportKey === key) {
+    return globalForMail.mailTransport
+  }
+  // The settings changed under a live transport: drop its pooled connections.
+  globalForMail.mailTransport?.close()
+
   // `pool` keeps one connection warm across the handful of mails this app
   // sends, rather than reconnecting (and re-authenticating) per invite.
   const created = config ? nodemailer.createTransport({ ...config, pool: true }) : null
 
   globalForMail.mailTransport = created
+  globalForMail.mailTransportKey = key
   return created
 }
 

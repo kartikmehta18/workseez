@@ -60,7 +60,7 @@ export function PostList({
   emptyTitle: string
   emptyHint: string
 }) {
-  const [view, setView] = React.useState<View>("list")
+  const [view, setView] = React.useState<View>("calendar")
   const [query, setQuery] = React.useState("")
   const [status, setStatus] = React.useState("ALL")
   const [kind, setKind] = React.useState("ALL")

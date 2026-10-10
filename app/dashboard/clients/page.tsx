@@ -2,7 +2,7 @@ import Link from "next/link"
 import { ChevronRight, Users } from "lucide-react"
 import { requireActor } from "@/lib/auth"
 import { listVisibleClients } from "@/lib/clients"
-import { can } from "@/lib/rbac"
+import { can, canSeeClientEmail } from "@/lib/rbac"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
@@ -30,6 +30,7 @@ export default async function ClientsPage({
   const actor = await requireActor()
   const allClients = await listVisibleClients(actor)
   const canCreate = can(actor, "client:create")
+  const showEmail = canSeeClientEmail(actor)
 
   const needle = query.toLowerCase()
   const clients = needle
@@ -65,7 +66,9 @@ export default async function ClientsPage({
           <Users className="text-muted-foreground mx-auto size-8" />
           <p className="mt-3 font-medium">No clients match “{query}”</p>
           <p className="text-muted-foreground mx-auto mt-1 max-w-sm text-sm">
-            Try a different name, company, email, or manager.
+            {showEmail
+              ? "Try a different name, company, email, or manager."
+              : "Try a different name, company, or manager."}
           </p>
         </div>
       ) : clients.length === 0 ? (
@@ -87,7 +90,7 @@ export default async function ClientsPage({
               <TableHeader>
                 <TableRow>
                   <TableHead>Client</TableHead>
-                  <TableHead>Login email</TableHead>
+                  {showEmail ? <TableHead>Login email</TableHead> : null}
                   <TableHead>Portal access</TableHead>
                   <TableHead>Managers</TableHead>
                   <TableHead>Status</TableHead>
@@ -116,9 +119,11 @@ export default async function ClientsPage({
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {client.owner?.email ?? "—"}
-                    </TableCell>
+                    {showEmail ? (
+                      <TableCell className="text-muted-foreground text-sm">
+                        {client.owner?.email ?? "—"}
+                      </TableCell>
+                    ) : null}
                     <TableCell>
                       <InviteStatusBadge status={client.owner?.status ?? "INVITED"} />
                     </TableCell>
@@ -167,9 +172,11 @@ export default async function ClientsPage({
                     {client.company ? (
                       <p className="text-muted-foreground truncate text-xs">{client.company}</p>
                     ) : null}
-                    <p className="text-muted-foreground mt-1 truncate text-xs">
-                      {client.owner?.email ?? "—"}
-                    </p>
+                    {showEmail ? (
+                      <p className="text-muted-foreground mt-1 truncate text-xs">
+                        {client.owner?.email ?? "—"}
+                      </p>
+                    ) : null}
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <ClientStatusBadge status={client.status} />

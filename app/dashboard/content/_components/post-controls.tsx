@@ -16,8 +16,11 @@ import {
   CONTENT_STATUS_LABELS,
   statusesForKind,
   type ContentKind,
+  type ContentPlatform,
   type ContentStatus,
 } from "@/lib/content"
+import { cn } from "@/lib/utils"
+import { StatusOption, statusFieldClass } from "./content-badges"
 import { deletePost, setPostShared, setPostStatus } from "../actions"
 
 /**
@@ -31,12 +34,14 @@ import { deletePost, setPostShared, setPostStatus } from "../actions"
 export function PostControls({
   postId,
   kind,
+  platform,
   status,
   shared,
   canDelete,
 }: {
   postId: string
   kind: ContentKind
+  platform: ContentPlatform
   status: ContentStatus
   shared: boolean
   canDelete: boolean
@@ -102,16 +107,16 @@ export function PostControls({
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Select value={status} onValueChange={changeStatus} disabled={pending}>
-        <SelectTrigger className="h-9 w-44" aria-label="Post status">
+        <SelectTrigger className={cn("h-9 w-44", statusFieldClass(status))} aria-label="Post status">
           <SelectValue />
         </SelectTrigger>
         {/* Only the statuses this type can be in — a carousel is never waiting
             on a shoot or sitting with an editor, so "Scripting" is not on the
             menu for one even if that is what the row still says. */}
         <SelectContent>
-          {statusesForKind(kind).map((option) => (
+          {statusesForKind(kind, platform).map((option) => (
             <SelectItem key={option} value={option}>
-              {CONTENT_STATUS_LABELS[option]}
+              <StatusOption status={option} />
             </SelectItem>
           ))}
         </SelectContent>

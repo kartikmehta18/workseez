@@ -17,18 +17,24 @@ import { cn } from "@/lib/utils"
 import {
   contentBlockTitle,
   contentLinkLabels,
+  isContentBodyLabel,
   isVideoKind,
   type PostDetail,
   type PostView,
 } from "@/lib/content"
+import { drivePreviewUrl } from "@/lib/links"
+import { bodyToHtml, bodyToPlain, isRichBody } from "@/lib/rich-text"
 import { loadPostDetail } from "../actions"
 import {
+  ApprovalBadge,
   PostKindBadge,
   PostPlatformBadge,
   PostStatusBadge,
   RawUploadBadge,
   SharedBadge,
 } from "./content-badges"
+import { CopyButton } from "./copy-button"
+import { PostApproval } from "./post-approval"
 import { PostControls } from "./post-controls"
 import { PostEditor } from "./post-editor"
 import { PostFeedback } from "./post-feedback"
@@ -161,7 +167,17 @@ export const PostCard = React.memo(function PostCard({
   // The client only gets the upload panel when it is asked for; the team always
   // has it, so they can drop an edit or a stand-in file in themselves.
   const showUpload = isVideo && (canManage || post.needsRawUpload)
-  const linkLabels = contentLinkLabels(post.kind)
+  const linkLabels = contentLinkLabels(post.kind, post.platform)
+  const blockTitle = contentBlockTitle(post.kind, post.platform)
+  // The finished piece itself, shown in the card when its link is a Drive one —
+  // so the artwork can be read against the copy without leaving the page.
+  const finalPreview = drivePreviewUrl(post.finalEditUrl)
+  // On LinkedIn the description is pasted into LinkedIn by hand, so its heading
+  // carries a copy button. Found by label, like the editor finds it.
+  const description =
+    post.platform === "LINKEDIN" && !isVideo
+      ? (detail?.script.find((line) => isContentBodyLabel(line.label))?.body ?? "")
+      : ""
 
   return (
     <li
@@ -189,6 +205,7 @@ export const PostCard = React.memo(function PostCard({
                 goes out on is the client's own question, not working detail. */}
             <PostPlatformBadge platform={post.platform} />
             {post.needsRawUpload ? <RawUploadBadge /> : null}
+            <ApprovalBadge approval={post.approval} />
             {canManage ? (
               <>
                 <PostKindBadge kind={post.kind} />
@@ -241,6 +258,7 @@ export const PostCard = React.memo(function PostCard({
                   <PostControls
                     postId={post.id}
                     kind={post.kind}
+                    platform={post.platform}
                     status={post.status}
                     shared={post.shared}
                     canDelete={canDelete}
@@ -270,7 +288,7 @@ export const PostCard = React.memo(function PostCard({
               {post.rawFileUrl || post.finalEditUrl || post.editsFolderUrl ? (
                 <div className="flex flex-wrap gap-2">
                   {post.rawFileUrl ? (
-                    <LinkButton href={post.rawFileUrl} label="Raw file" icon={Video} />
+                    <LinkButton href={post.rawFileUrl} label={linkLabels.raw} icon={Video} />
                   ) : null}
                   {post.finalEditUrl ? (
                     <LinkButton href={post.finalEditUrl} label={linkLabels.final} icon={FileText} />
@@ -285,22 +303,61 @@ export const PostCard = React.memo(function PostCard({
                 </div>
               ) : null}
 
+              {finalPreview ? (
+                <div>
+                  <h4 className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
+                    {linkLabels.final}
+                  </h4>
+                  {/* Only mounted while the card is open, so a cycle of posts
+                      does not load a Drive viewer each. */}
+                  <iframe
+                    src={finalPreview}
+                    title={`${linkLabels.final} — ${post.title}`}
+                    loading="lazy"
+                    allow="autoplay; fullscreen"
+                    referrerPolicy="no-referrer"
+                    className="bg-muted/40 mt-2 aspect-video w-full max-w-2xl rounded-lg border sm:aspect-4/3"
+                  />
+                  <p className="text-muted-foreground mt-1.5 text-xs">
+                    Showing the file from Google Drive. If it asks for access, the file isn&apos;t
+                    shared with the account you&apos;re signed in to Google with.
+                  </p>
+                </div>
+              ) : null}
+
               {/* "Script" on a reel, "Content" on a post or carousel — the
                   client reads this block too, so it has to name what they are
                   actually looking at. */}
               <div>
-                <h4 className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
-                  {contentBlockTitle(post.kind)}
-                </h4>
-                <ScriptView lines={detail.script} kind={post.kind} className="mt-2" />
+                <div className="flex min-h-7 items-center justify-between gap-2">
+                  <h4 className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
+                    {blockTitle}
+                  </h4>
+                  {description.trim() ? (
+                    <CopyButton
+                      text={bodyToPlain(description)}
+                      html={isRichBody(description) ? bodyToHtml(description) : undefined}
+                      label={blockTitle}
+                    />
+                  ) : null}
+                </div>
+                <ScriptView
+                  lines={detail.script}
+                  kind={post.kind}
+                  platform={post.platform}
+                  className="mt-1"
+                />
               </div>
 
               {post.caption ? (
                 <div>
-                  <h4 className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
-                    Caption
-                  </h4>
-                  <p className="bg-muted/40 mt-2 rounded-lg border px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap wrap-break-word">
+                  <div className="flex min-h-7 items-center justify-between gap-2">
+                    <h4 className="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">
+                      Caption
+                    </h4>
+                    <CopyButton text={post.caption} label="Caption" />
+                  </div>
+                  <p className="bg-muted/40 mt-1 rounded-lg border px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap wrap-break-word">
                     {post.caption}
                   </p>
                 </div>
@@ -317,6 +374,19 @@ export const PostCard = React.memo(function PostCard({
                     {post.notes}
                   </p>
                 </div>
+              ) : null}
+
+              {/* Only on a post the client can see — there is nothing to approve
+                  in one they have not been shown. */}
+              {post.shared ? (
+                <PostApproval
+                  postId={post.id}
+                  approval={post.approval}
+                  note={post.approvalNote}
+                  decidedLabel={post.approvalLabel}
+                  canDecide={canComment}
+                  isTeam={canManage}
+                />
               ) : null}
 
               <PostFeedback

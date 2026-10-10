@@ -10,6 +10,7 @@ import {
   toCycleOptions,
   toDateInputValue,
   toPostView,
+  isLiveStatus,
 } from "@/lib/content"
 import { getOwnCalendar, listCalendarOverviews } from "@/lib/content-queries"
 import { driveConfigured } from "@/lib/drive"
@@ -165,7 +166,7 @@ async function TeamView({ actor }: { actor: Actor }) {
             // The next thing going out, which is what a manager scanning the
             // roster actually wants to know.
             const next = calendar?.posts
-              .filter((post) => post.scheduledFor && post.status !== "PUBLISHED")
+              .filter((post) => post.scheduledFor && !isLiveStatus(post.status))
               .sort(
                 (a, b) => (a.scheduledFor?.getTime() ?? 0) - (b.scheduledFor?.getTime() ?? 0),
               )[0]
@@ -220,7 +221,7 @@ async function TeamView({ actor }: { actor: Actor }) {
 
                   {next ? (
                     <div className="mt-3 flex items-center gap-2 border-t pt-3">
-                      <PostStatusBadge status={next.status} kind={next.kind} />
+                      <PostStatusBadge status={next.status} kind={next.kind} platform={next.platform} />
                       <span className="text-muted-foreground truncate text-xs">
                         next {next.scheduledFor ? formatDayMonth(next.scheduledFor) : ""}
                       </span>

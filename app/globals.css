@@ -427,3 +427,29 @@ body {
     animation: none;
   }
 }
+
+/*
+ * A pointer on everything that can be clicked. Tailwind's reset leaves buttons
+ * with the default arrow, which made the calendar squares, the post cards and
+ * most icon buttons look like plain text until they were pressed. Set once
+ * here, in the base layer, so a utility on an element still wins — and left
+ * off anything disabled, which keeps its own "not allowed" cursor.
+ */
+@layer base {
+  a[href],
+  button:not(:disabled),
+  summary,
+  select:not(:disabled),
+  label[for],
+  label:has(input:is([type="checkbox"], [type="radio"])),
+  input:is([type="checkbox"], [type="radio"], [type="submit"], [type="button"], [type="file"], [type="date"]):not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]),
+  [role="menuitem"]:not([data-disabled]),
+  [role="option"]:not([data-disabled]),
+  [role="combobox"]:not(:disabled),
+  [role="switch"]:not(:disabled),
+  [role="checkbox"]:not(:disabled) {
+    cursor: pointer;
+  }
+}

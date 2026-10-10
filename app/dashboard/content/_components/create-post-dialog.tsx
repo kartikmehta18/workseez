@@ -33,6 +33,8 @@ import {
   CONTENT_STATUS_LABELS,
   contentLinkLabels,
   defaultStatusForKind,
+  normalizeStatusForKind,
+  hasCaption,
   isVideoKind,
   statusesForKind,
   toContentKind,
@@ -42,6 +44,7 @@ import {
   type ContentPlatform,
   type ContentStatus,
 } from "@/lib/content"
+import { StatusOption, statusFieldClass } from "./content-badges"
 import { PostContentEditor, seedDraft } from "./post-content-editor"
 import { createPost } from "../actions"
 
@@ -97,7 +100,13 @@ export function CreatePostDialog({
       {/* No max-h override — DialogContent already caps at 100dvh-2rem. A vh cap
           measures the viewport behind mobile browser chrome, which put the
           footer buttons under the address bar on a phone. */}
-      <DialogContent className="sm:max-w-3xl">
+      <DialogContent
+        className="sm:max-w-3xl"
+        // A half-written post is too easy to lose to a stray click: this closes
+        // only on save, Cancel or the cross, never on the backdrop or Escape.
+        onInteractOutside={(event) => event.preventDefault()}
+        onEscapeKeyDown={(event) => event.preventDefault()}
+      >
         {/* Mounted only while open, so every new post starts from a clean draft
             instead of whatever the last one was left at. */}
         {open ? (
@@ -112,6 +121,10 @@ export function CreatePostDialog({
   )
 }
 
+/** What a new post starts as: LinkedIn, and the first type LinkedIn offers. */
+const DEFAULT_PLATFORM: ContentPlatform = "LINKEDIN"
+const DEFAULT_KIND: ContentKind = contentKindsForPlatform(DEFAULT_PLATFORM)[0]
+
 function NewPostForm({
   calendarId,
   defaultDate,
@@ -122,9 +135,9 @@ function NewPostForm({
   onDone: () => void
 }) {
   const [pending, startTransition] = React.useTransition()
-  const [kind, setKind] = React.useState<ContentKind>("REEL")
-  const [platform, setPlatform] = React.useState<ContentPlatform>("INSTAGRAM")
-  const [status, setStatus] = React.useState<ContentStatus>(defaultStatusForKind("REEL"))
+  const [kind, setKind] = React.useState<ContentKind>(DEFAULT_KIND)
+  const [platform, setPlatform] = React.useState<ContentPlatform>(DEFAULT_PLATFORM)
+  const [chosenStatus, setStatus] = React.useState<ContentStatus>(defaultStatusForKind(DEFAULT_KIND, DEFAULT_PLATFORM))
 
   const onSubmit = (formData: FormData) => {
     startTransition(async () => {
@@ -143,26 +156,35 @@ function NewPostForm({
   }
 
   const isVideo = isVideoKind(kind)
-  const statuses = statusesForKind(kind)
-  const linkLabels = contentLinkLabels(kind)
+  // Read against the current type and platform, so the select can never hold a
+  // status its own list does not offer.
+  const status = normalizeStatusForKind(kind, platform, chosenStatus)
+  const statuses = statusesForKind(kind, platform)
+  const linkLabels = contentLinkLabels(kind, platform)
 
   /**
    * Switching Reel → Post moves the post onto the other track entirely, so a
    * status the new type cannot be in drops back to that track's first step
    * rather than leaving the select showing a value that is no longer on offer.
    */
-  const changeKind = (value: string) => {
+  const changeKind = (value: string, onPlatform: ContentPlatform = platform) => {
     const next = toContentKind(value)
     setKind(next)
-    if (!statusesForKind(next).includes(status)) setStatus(defaultStatusForKind(next))
+    if (!statusesForKind(next, onPlatform).includes(status)) {
+      setStatus(defaultStatusForKind(next, onPlatform))
+    }
   }
 
+  /**
+   * The platform can move the post onto another track too — LinkedIn has its
+   * own statuses whatever the type — so the status is re-checked against the
+   * new platform even when the type survives the switch.
+   */
   const changePlatform = (value: string) => {
     const next = toContentPlatform(value)
     setPlatform(next)
-    if (!contentKindsForPlatform(next).includes(kind)) {
-      changeKind(contentKindsForPlatform(next)[0])
-    }
+    const kinds = contentKindsForPlatform(next)
+    changeKind(kinds.includes(kind) ? kind : kinds[0], next)
   }
 
   return (
@@ -215,7 +237,7 @@ function NewPostForm({
 
           <div className="grid gap-2">
             <Label htmlFor="new-post-kind">Type</Label>
-            <Select value={kind} onValueChange={changeKind}>
+            <Select value={kind} onValueChange={(value) => changeKind(value)}>
               <SelectTrigger id="new-post-kind">
                 <SelectValue />
               </SelectTrigger>
@@ -235,7 +257,7 @@ function NewPostForm({
               value={status}
               onValueChange={(value) => setStatus(toContentStatus(value))}
             >
-              <SelectTrigger id="new-post-status">
+              <SelectTrigger id="new-post-status" className={statusFieldClass(status)}>
                 <SelectValue />
               </SelectTrigger>
               {/* Only the statuses this type can be in — a carousel is never
@@ -243,7 +265,7 @@ function NewPostForm({
               <SelectContent>
                 {statuses.map((option) => (
                   <SelectItem key={option} value={option}>
-                    {CONTENT_STATUS_LABELS[option]}
+                    <StatusOption status={option} />
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -283,7 +305,7 @@ function NewPostForm({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="grid gap-2">
-            <Label htmlFor="new-post-raw">Raw file link</Label>
+            <Label htmlFor="new-post-raw">{linkLabels.rawLink}</Label>
             <Input
               id="new-post-raw"
               name="rawFileUrl"
@@ -309,19 +331,23 @@ function NewPostForm({
         <PostContentEditor
           idPrefix="New"
           kind={kind}
-          initialLines={seedDraft("REEL")}
+          platform={platform}
+          initialLines={seedDraft(DEFAULT_KIND)}
           reseedOnKindChange
         />
 
-        <div className="grid gap-2">
-          <Label htmlFor="new-post-caption">Caption</Label>
-          <Textarea
-            id="new-post-caption"
-            name="caption"
-            placeholder="Optional. The caption that goes out with the post."
-            className="min-h-16 resize-y"
-          />
-        </div>
+        {/* LinkedIn has no caption — the description above is what goes out. */}
+        {hasCaption(platform) ? (
+          <div className="grid gap-2">
+            <Label htmlFor="new-post-caption">Caption</Label>
+            <Textarea
+              id="new-post-caption"
+              name="caption"
+              placeholder="Optional. The caption that goes out with the post."
+              className="min-h-16 resize-y"
+            />
+          </div>
+        ) : null}
 
         <label className="flex items-start gap-2.5 rounded-lg border p-3 text-sm">
           <input type="checkbox" name="publishNow" className="accent-primary mt-0.5 size-4" />
