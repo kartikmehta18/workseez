@@ -185,6 +185,9 @@ export default async function ClientContentPage({ params }: { params: Promise<{ 
         canManage
         canDelete={canDelete}
         canComment
+        // Approving is the client's call; on this side only the Super Admin
+        // records one for them.
+        canDecide={actor.role === "SUPER_ADMIN"}
         driveEnabled={driveConfigured()}
         calendarId={calendar.id}
         emptyTitle="No posts yet"

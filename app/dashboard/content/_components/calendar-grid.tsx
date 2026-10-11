@@ -7,12 +7,11 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import {
   CONTENT_KIND_LABELS,
-  CONTENT_STATUSES,
   CONTENT_STATUS_LABELS,
   type ContentStatus,
   type PostView,
 } from "@/lib/content"
-import { PlatformDot } from "./content-badges"
+import { KindIcon } from "./content-badges"
 
 /**
  * The month view.
@@ -93,14 +92,27 @@ function monthGrid(year: number, month: number) {
 
 export function CalendarGrid({
   posts,
+  statuses,
   initialMonth,
   onSelect,
+  onOpenDay,
   onAdd,
 }: {
   posts: PostView[]
+  /**
+   * What the key under the grid lists — the statuses the platforms on show can
+   * actually be in, so a LinkedIn calendar is not explained in shoot days.
+   */
+  statuses: readonly ContentStatus[]
   /** yyyy-mm-dd to open on — the selected cycle's start, usually. */
   initialMonth: string | null
   onSelect: (postId: string) => void
+  /**
+   * Team only. Tapping a post on a dated square opens that day instead — the
+   * posts already on it to edit, and the way to add another — rather than
+   * leaving the month for the list.
+   */
+  onOpenDay?: (date: string) => void
   /**
    * Team only. Adds a post already dated to the square that was tapped, which
    * is the one thing planning a cycle in the month view kept having to leave
@@ -141,9 +153,6 @@ export function CalendarGrid({
     () => monthGrid(cursor.getFullYear(), cursor.getMonth()),
     [cursor],
   )
-
-  /** Every status, always — the key stays the same whatever is on screen. */
-  const legend = CONTENT_STATUSES
 
   const shift = (delta: number) =>
     setCursor((current) => new Date(current.getFullYear(), current.getMonth() + delta, 1))
@@ -256,14 +265,14 @@ export function CalendarGrid({
                         <button
                           key={post.id}
                           type="button"
-                          onClick={() => onSelect(post.id)}
+                          onClick={() => (onOpenDay ? onOpenDay(key) : onSelect(post.id))}
                           title={`${CONTENT_KIND_LABELS[post.kind]} · ${CONTENT_STATUS_LABELS[post.status]} — ${post.title}`}
                           className={cn(
                             "focus-visible:ring-ring flex min-h-0 w-full flex-1 items-center justify-center gap-1 px-2 text-center text-[11px] leading-tight font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset",
                             DOT_STYLES[post.status],
                           )}
                         >
-                          <PlatformDot platform={post.platform} className="size-1.5 shrink-0" />
+                          <KindIcon kind={post.kind} />
                           <span className={entries.length > 2 ? "truncate" : "line-clamp-2"}>
                             {post.title}
                           </span>
@@ -301,7 +310,7 @@ export function CalendarGrid({
       </div>
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t px-4 py-2.5">
-        {legend.map((status) => (
+        {statuses.map((status) => (
           <span key={status} className="text-muted-foreground flex items-center gap-1.5 text-xs">
             <span className={cn("size-2.5 rounded-full", LEGEND_STYLES[status])} />
             {CONTENT_STATUS_LABELS[status]}
@@ -325,7 +334,7 @@ export function CalendarGrid({
                   DOT_STYLES[post.status],
                 )}
               >
-                <PlatformDot platform={post.platform} className="size-1.5" />
+                <KindIcon kind={post.kind} />
                 <span className="truncate">{post.title}</span>
               </button>
             ))}

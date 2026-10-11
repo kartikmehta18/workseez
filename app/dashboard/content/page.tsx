@@ -109,6 +109,7 @@ async function ClientView({ actor }: { actor: Actor }) {
         canManage={false}
         canDelete={false}
         canComment
+        canDecide
         driveEnabled={driveConfigured()}
         emptyTitle="Nothing in this cycle"
         emptyHint="Pick another cycle, or check back once your team publishes the next batch."

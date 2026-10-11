@@ -25,8 +25,8 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import {
-  CONTENT_KINDS,
   CONTENT_KIND_LABELS,
+  contentKindsForPlatform,
   CONTENT_PLATFORMS,
   CONTENT_PLATFORM_LABELS,
   CONTENT_STATUS_HINTS,
@@ -35,6 +35,7 @@ import {
   defaultStatusForKind,
   normalizeStatusForKind,
   hasCaption,
+  isVideoKind,
   statusesForKind,
   toContentKind,
   toContentPlatform,
@@ -46,7 +47,7 @@ import {
 } from "@/lib/content"
 import { StatusOption, statusFieldClass } from "./content-badges"
 import { PostContentEditor, toDraft } from "./post-content-editor"
-import { savePost } from "../actions"
+import { loadPostDetail, savePost } from "../actions"
 
 /**
  * The full post editor — every field on the card, plus whatever the type calls
@@ -62,20 +63,41 @@ import { savePost } from "../actions"
 export function PostEditor({
   post,
   script,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   post: PostView
-  /** Loaded with the rest of the card's detail — the list no longer carries it. */
-  script: PostDetail["script"]
+  /**
+   * Loaded with the rest of the card's detail — the list no longer carries it.
+   * Left out by the month grid, which has no card open to borrow it from; the
+   * dialog then fetches it itself when it opens.
+   */
+  script?: PostDetail["script"]
+  /**
+   * Drives the dialog from outside and drops its own button — see the same
+   * pair on CreatePostDialog.
+   */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
-  const [open, setOpen] = React.useState(false)
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false)
+
+  const controlled = controlledOpen !== undefined
+  const open = controlled ? controlledOpen : uncontrolledOpen
+  const setOpen = (next: boolean) => {
+    if (!controlled) setUncontrolledOpen(next)
+    onOpenChange?.(next)
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Pencil /> Edit
-        </Button>
-      </DialogTrigger>
+      {controlled ? null : (
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm">
+            <Pencil /> Edit
+          </Button>
+        </DialogTrigger>
+      )}
       {/* See CreatePostDialog — the base dvh cap is the mobile-safe one. */}
       <DialogContent
         className="sm:max-w-3xl"
@@ -88,9 +110,54 @@ export function PostEditor({
             away on close. Resetting it in an effect instead would mean the
             dialog paints last session's draft for a frame before correcting
             itself, and would go stale the moment a save changed the post. */}
-        {open ? <PostForm post={post} script={script} onDone={() => setOpen(false)} /> : null}
+        {!open ? null : script ? (
+          <PostForm post={post} script={script} onDone={() => setOpen(false)} />
+        ) : (
+          <LoadedPostForm post={post} onDone={() => setOpen(false)} />
+        )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * The form for a post whose script is not on the page yet. Fetched here, once,
+ * and only then is the form mounted — its draft state is seeded from the script
+ * on mount, so it must not exist before the script does.
+ */
+function LoadedPostForm({ post, onDone }: { post: PostView; onDone: () => void }) {
+  const [script, setScript] = React.useState<PostDetail["script"] | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    let cancelled = false
+    loadPostDetail(post.id).then((result) => {
+      if (cancelled) return
+      if (result.ok) setScript(result.detail.script)
+      else setError(result.error)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [post.id])
+
+  if (script) return <PostForm post={post} script={script} onDone={onDone} />
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Edit post</DialogTitle>
+        <DialogDescription className="wrap-break-word">{post.title}</DialogDescription>
+      </DialogHeader>
+      {error ? (
+        <p className="text-destructive py-6 text-sm">{error}</p>
+      ) : (
+        <div className="text-muted-foreground flex items-center gap-2 py-6 text-sm" role="status">
+          <Loader2 className="size-4 animate-spin" />
+          Loading post…
+        </div>
+      )}
+    </>
   )
 }
 
@@ -117,6 +184,11 @@ function PostForm({
   const status = normalizeStatusForKind(kind, platform, chosenStatus)
   const statuses = statusesForKind(kind, platform)
   const linkLabels = contentLinkLabels(kind, platform)
+  const isVideo = isVideoKind(kind)
+  // The platform's own types. A post saved under a type its platform no longer
+  // offers keeps it on the list until it is changed, so the select is never blank.
+  const offeredKinds = contentKindsForPlatform(platform)
+  const kinds = offeredKinds.includes(kind) ? offeredKinds : [kind, ...offeredKinds]
 
   /**
    * Switching Reel → Post moves the post onto the other track entirely, so a
@@ -125,21 +197,25 @@ function PostForm({
    * Nothing is saved until the form is submitted, so this is still undoable by
    * cancelling.
    */
-  const changeKind = (value: string) => {
+  const changeKind = (value: string, onPlatform: ContentPlatform = platform) => {
     const next = toContentKind(value)
     setKind(next)
-    if (!statusesForKind(next, platform).includes(status)) {
-      setStatus(defaultStatusForKind(next, platform))
+    if (!statusesForKind(next, onPlatform).includes(status)) {
+      setStatus(defaultStatusForKind(next, onPlatform))
     }
   }
 
-  /** LinkedIn has its own statuses whatever the type, so the platform moves tracks too. */
+  /**
+   * The platform decides which types are on offer, exactly as it does when the
+   * post is created — and LinkedIn has its own statuses whatever the type, so
+   * the status is re-checked against the new platform even when the type
+   * survives the switch.
+   */
   const changePlatform = (value: string) => {
     const next = toContentPlatform(value)
     setPlatform(next)
-    if (!statusesForKind(kind, next).includes(status)) {
-      setStatus(defaultStatusForKind(kind, next))
-    }
+    const offered = contentKindsForPlatform(next)
+    changeKind(offered.includes(kind) ? kind : offered[0], next)
   }
 
   const onSubmit = (formData: FormData) => {
@@ -183,22 +259,6 @@ function PostForm({
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="grid gap-2">
-            <Label htmlFor={`kind-${post.id}`}>Type</Label>
-            <Select value={kind} onValueChange={changeKind}>
-              <SelectTrigger id={`kind-${post.id}`}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CONTENT_KINDS.map((option) => (
-                  <SelectItem key={option} value={option}>
-                    {CONTENT_KIND_LABELS[option]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid gap-2">
             <Label htmlFor={`platform-${post.id}`}>Platform</Label>
             <Select value={platform} onValueChange={changePlatform}>
               <SelectTrigger id={`platform-${post.id}`}>
@@ -208,6 +268,22 @@ function PostForm({
                 {CONTENT_PLATFORMS.map((option) => (
                   <SelectItem key={option} value={option}>
                     {CONTENT_PLATFORM_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor={`kind-${post.id}`}>Type</Label>
+            <Select value={kind} onValueChange={(value) => changeKind(value)}>
+              <SelectTrigger id={`kind-${post.id}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {kinds.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {CONTENT_KIND_LABELS[option]}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -248,20 +324,24 @@ function PostForm({
           the post is already published to them.
         </p>
 
-        <label className="flex items-start gap-2.5 rounded-lg border p-3 text-sm">
-          <input
-            type="checkbox"
-            name="needsRawUpload"
-            defaultChecked={post.needsRawUpload}
-            className="accent-primary mt-0.5 size-4"
-          />
-          <span>
-            <span className="font-medium">Ask the client for raw footage</span>
-            <span className="text-muted-foreground block text-xs">
-              Puts the red upload panel on their card for this post.
+        {/* Filmed types only, as on the create form — nothing is shot for a
+            post or a carousel, so there is no footage to ask for. */}
+        {isVideo ? (
+          <label className="flex items-start gap-2.5 rounded-lg border p-3 text-sm">
+            <input
+              type="checkbox"
+              name="needsRawUpload"
+              defaultChecked={post.needsRawUpload}
+              className="accent-primary mt-0.5 size-4"
+            />
+            <span>
+              <span className="font-medium">Ask the client for raw footage</span>
+              <span className="text-muted-foreground block text-xs">
+                Puts the red upload panel on their card for this post.
+              </span>
             </span>
-          </span>
-        </label>
+          </label>
+        ) : null}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="grid gap-2">
@@ -284,16 +364,22 @@ function PostForm({
               placeholder="https://drive.google.com/…"
             />
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor={`rawfolder-${post.id}`}>Raw folder</Label>
-            <Input
-              id={`rawfolder-${post.id}`}
-              name="rawFolderUrl"
-              type="url"
-              defaultValue={post.rawFolderUrl ?? ""}
-              placeholder="Where the client's uploads land"
-            />
-          </div>
+          {/* Where uploaded footage lands, so it goes with the upload panel.
+              Off a filmed type the saved value rides along untouched. */}
+          {isVideo ? (
+            <div className="grid gap-2">
+              <Label htmlFor={`rawfolder-${post.id}`}>Raw folder</Label>
+              <Input
+                id={`rawfolder-${post.id}`}
+                name="rawFolderUrl"
+                type="url"
+                defaultValue={post.rawFolderUrl ?? ""}
+                placeholder="Where the client's uploads land"
+              />
+            </div>
+          ) : (
+            <input type="hidden" name="rawFolderUrl" value={post.rawFolderUrl ?? ""} />
+          )}
           <div className="grid gap-2">
             <Label htmlFor={`editsfolder-${post.id}`}>{linkLabels.folder}</Label>
             <Input

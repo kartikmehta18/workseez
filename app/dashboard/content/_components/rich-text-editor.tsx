@@ -79,9 +79,16 @@ export function RichTextEditor({
   labelledBy?: string
 }) {
   const ref = React.useRef<HTMLDivElement>(null)
-  // Fixed at mount: React only rewrites the box when this string changes.
   const [initialHtml] = React.useState(() => bodyToHtml(initialBody))
   const [empty, setEmpty] = React.useState(() => initialBody.trim().length === 0)
+
+  // Written once, by hand, rather than through dangerouslySetInnerHTML: React 19
+  // re-applies that prop whenever the object carrying it is a new one, which is
+  // every render — so each keystroke reported outwards came straight back as an
+  // emptied box, and nothing typed ever stayed on screen.
+  React.useLayoutEffect(() => {
+    if (ref.current) ref.current.innerHTML = initialHtml
+  }, [initialHtml])
 
   const emit = () => {
     const element = ref.current
@@ -116,9 +123,8 @@ export function RichTextEditor({
         onInput={emit}
         onBlur={emit}
         onPaste={onPaste}
-        dangerouslySetInnerHTML={{ __html: initialHtml }}
         className={cn(
-          "border-input bg-background ring-offset-background focus-visible:ring-ring max-h-96 min-h-32 w-full overflow-y-auto rounded-md border px-3 py-2 text-base focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none md:text-sm",
+          "border-input bg-background text-foreground ring-offset-background focus-visible:ring-ring max-h-96 min-h-32 w-full overflow-y-auto rounded-md border px-3 py-2 text-base focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none md:text-sm",
           RICH_TEXT_CLASS,
           invalid && "border-destructive",
         )}
