@@ -1,5 +1,21 @@
 import { SiInstagram, SiX, SiYoutube } from "@icons-pack/react-simple-icons"
-import { Check, Clapperboard, Upload, X } from "lucide-react"
+import {
+  ChartColumn,
+  Check,
+  CircleQuestionMark,
+  Clapperboard,
+  GalleryHorizontal,
+  Image as ImageIcon,
+  Laugh,
+  MessagesSquare,
+  MonitorPlay,
+  Newspaper,
+  Smartphone,
+  Upload,
+  Video,
+  X,
+  type LucideIcon,
+} from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -11,6 +27,7 @@ import {
   toContentKind,
   toContentPlatform,
   toContentStatus,
+  type ContentKind,
   type ContentPlatform,
   type ContentStatus,
   type PostApproval,
@@ -233,11 +250,37 @@ export function PostPlatformBadge({
   )
 }
 
+/**
+ * One mark per type, so a month of squares can be read by shape: which days are
+ * a carousel, which a video. Picked for what the thing looks like when it goes
+ * out rather than for the platform it goes out on, which the tabs already say.
+ */
+const KIND_ICONS: Record<ContentKind, LucideIcon> = {
+  REEL: Clapperboard,
+  POST: ImageIcon,
+  CAROUSEL: GalleryHorizontal,
+  STORY: Smartphone,
+  YOUTUBE: MonitorPlay,
+  INFOGRAPHIC: ChartColumn,
+  THREAD: MessagesSquare,
+  VIDEO: Video,
+  MEME: Laugh,
+  NEWSLETTER: Newspaper,
+  SHORTS: Smartphone,
+  NOT_DECIDED: CircleQuestionMark,
+}
+
+/** The type's icon on its own — for the month grid and the kind badge. */
+export function KindIcon({ kind, className }: { kind: string; className?: string }) {
+  const Icon = KIND_ICONS[toContentKind(kind)]
+  return <Icon aria-hidden className={cn("size-3 shrink-0", className)} />
+}
+
 /** Reel / Post / Carousel — quieter than the status, since it rarely changes. */
 export function PostKindBadge({ kind, className }: { kind: string; className?: string }) {
   return (
     <Badge variant="outline" className={cn("text-muted-foreground gap-1 font-medium", className)}>
-      <Clapperboard className="size-3" />
+      <KindIcon kind={kind} />
       {CONTENT_KIND_LABELS[toContentKind(kind)]}
     </Badge>
   )

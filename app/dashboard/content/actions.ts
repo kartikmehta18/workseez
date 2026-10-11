@@ -14,6 +14,7 @@ import {
 import { assertCan, can, ForbiddenError, type Actor } from "@/lib/rbac"
 import { bodyToPlain, cleanSubmittedBody } from "@/lib/rich-text"
 import {
+  canDecideApproval,
   CONTENT_KIND_LABELS,
   CONTENT_STATUS_LABELS,
   countWords,
@@ -740,9 +741,10 @@ export async function addPostComment(formData: FormData): Promise<ActionResult> 
  * The client's approve / reject on a post, and the way back to undecided.
  *
  * Gated on ownership rather than a permission, like the strategy sheet's
- * sign-off: it is the client's own call. The team can set it too — a client who
- * approves over a call still needs it recorded — and can clear it once a
- * rejected post has been reworked.
+ * sign-off: it is the client's own call. The Super Admin can set it too — a
+ * client who approves over a call still needs it recorded — and can clear it
+ * once a rejected post has been reworked. Admins and managers cannot: they made
+ * the post, so they read the verdict rather than give it.
  *
  * The reason is optional and only kept with a rejection.
  */
@@ -777,6 +779,9 @@ export async function setPostApproval(formData: FormData): Promise<ActionResult>
     (await prisma.client.count({ where: { AND: [{ id: clientId }, clientScopeFor(actor)] } })) > 0
 
   if (!isOwner && !canManage) return fail("You don't have permission to approve this post.")
+  if (!canDecideApproval(actor, isOwner)) {
+    return fail("Only the client or the Super Admin can approve or reject a post.")
+  }
   // There is nothing to approve in a post the client has not been shown.
   if (!post.sharedAt) return fail("This post hasn't been published to the client yet.")
 

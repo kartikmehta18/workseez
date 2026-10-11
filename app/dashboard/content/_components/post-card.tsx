@@ -145,6 +145,7 @@ export const PostCard = React.memo(function PostCard({
   canManage,
   canDelete,
   canComment,
+  canDecide,
   driveEnabled,
   open,
   detailVersion,
@@ -155,6 +156,8 @@ export const PostCard = React.memo(function PostCard({
   canManage: boolean
   canDelete: boolean
   canComment: boolean
+  /** Approve and reject — the client's call, and the Super Admin's on their behalf. */
+  canDecide: boolean
   driveEnabled: boolean
   open: boolean
   detailVersion: number
@@ -172,6 +175,10 @@ export const PostCard = React.memo(function PostCard({
   // The finished piece itself, shown in the card when its link is a Drive one —
   // so the artwork can be read against the copy without leaving the page.
   const finalPreview = drivePreviewUrl(post.finalEditUrl)
+  // The folder is a working link: once the post is published to the client the
+  // finished piece is the link that matters, so the folder drops off the card.
+  // It stays editable in the post editor.
+  const folderUrl = post.shared ? null : post.editsFolderUrl
   // On LinkedIn the description is pasted into LinkedIn by hand, so its heading
   // carries a copy button. Found by label, like the editor finds it.
   const description =
@@ -285,7 +292,7 @@ export const PostCard = React.memo(function PostCard({
                 />
               ) : null}
 
-              {post.rawFileUrl || post.finalEditUrl || post.editsFolderUrl ? (
+              {post.rawFileUrl || post.finalEditUrl || folderUrl ? (
                 <div className="flex flex-wrap gap-2">
                   {post.rawFileUrl ? (
                     <LinkButton href={post.rawFileUrl} label={linkLabels.raw} icon={Video} />
@@ -293,9 +300,9 @@ export const PostCard = React.memo(function PostCard({
                   {post.finalEditUrl ? (
                     <LinkButton href={post.finalEditUrl} label={linkLabels.final} icon={FileText} />
                   ) : null}
-                  {post.editsFolderUrl ? (
+                  {folderUrl ? (
                     <LinkButton
-                      href={post.editsFolderUrl}
+                      href={folderUrl}
                       label={linkLabels.folder}
                       icon={FolderOpen}
                     />
@@ -384,7 +391,7 @@ export const PostCard = React.memo(function PostCard({
                   approval={post.approval}
                   note={post.approvalNote}
                   decidedLabel={post.approvalLabel}
-                  canDecide={canComment}
+                  canDecide={canDecide}
                   isTeam={canManage}
                 />
               ) : null}

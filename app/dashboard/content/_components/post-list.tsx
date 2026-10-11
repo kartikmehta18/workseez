@@ -13,13 +13,17 @@ import {
   CONTENT_PLATFORM_LABELS,
   CONTENT_STATUSES,
   CONTENT_STATUS_LABELS,
+  statusesForPlatforms,
+  toContentPlatform,
   type CycleOption,
   type PostView,
 } from "@/lib/content"
 import { CalendarGrid } from "./calendar-grid"
 import { PlatformIcon } from "./content-badges"
 import { CreatePostDialog } from "./create-post-dialog"
+import { DayDialog } from "./day-dialog"
 import { PostCard } from "./post-card"
+import { PostEditor } from "./post-editor"
 
 type View = "list" | "calendar"
 
@@ -39,6 +43,7 @@ export function PostList({
   canManage,
   canDelete,
   canComment,
+  canDecide,
   driveEnabled,
   calendarId,
   emptyTitle,
@@ -51,6 +56,8 @@ export function PostList({
   canManage: boolean
   canDelete: boolean
   canComment: boolean
+  /** Approve and reject — the client, and the Super Admin on their behalf. */
+  canDecide: boolean
   driveEnabled: boolean
   /**
    * Only the team's view passes it, and only it needs to: it is what lets the
@@ -133,31 +140,19 @@ export function PostList({
   )
 
   /**
-   * A tab per channel that has something to show — a count of zero means the
-   * tab leads nowhere, so it is not drawn at all. The one exception is whatever
-   * is currently selected: a tab that vanishes under your finger takes the only
-   * way back to "All" with it.
-   *
-   * Counts come from beforePlatform, so they answer "what would tapping this
-   * show" under the filters already set, and the strip stays down to a single
-   * channel — one Instagram post and nothing else still gets All + Instagram.
+   * A button per channel that has something to show under the filters already
+   * set — one that would lead nowhere is not drawn. The exception is whatever is
+   * currently selected: a button that vanishes under your finger takes the way
+   * back to every platform with it.
    */
-  const platformTabs = React.useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const post of beforePlatform) {
-      counts.set(post.platform, (counts.get(post.platform) ?? 0) + 1)
-    }
-    return [
-      { value: "ALL", label: "All", count: beforePlatform.length },
-      ...CONTENT_PLATFORMS.filter(
-        (option) => (counts.get(option) ?? 0) > 0 || option === platform,
-      ).map((option) => ({
-        value: option as string,
-        label: CONTENT_PLATFORM_LABELS[option],
-        count: counts.get(option) ?? 0,
-      })),
-    ]
-  }, [beforePlatform, platform])
+  const platformTabs = React.useMemo(
+    () =>
+      CONTENT_PLATFORMS.filter(
+        (option) =>
+          option === platform || beforePlatform.some((post) => post.platform === option),
+      ),
+    [beforePlatform, platform],
+  )
 
   // Stable across renders so the memo on PostCard holds: a fresh closure per
   // card would change every card's props on every keystroke and re-render the
@@ -177,6 +172,28 @@ export function PostList({
    * dialog mounted once for the whole month instead of once per square.
    */
   const [addDate, setAddDate] = React.useState<string | null>(null)
+
+  /**
+   * Team only: the day a post was tapped on in the month grid, and the post
+   * picked from it to edit. Two steps because a day can hold several posts and
+   * the tap alone does not say which — or whether another was wanted instead.
+   */
+  const [dayDate, setDayDate] = React.useState<string | null>(null)
+  const [editId, setEditId] = React.useState<string | null>(null)
+  const editPost = editId ? (posts.find((post) => post.id === editId) ?? null) : null
+
+  /**
+   * The statuses worth naming — in the grid's key and in the status filter.
+   * Only the tracks of the platforms in play: the tab that is selected, or under
+   * "All" whichever platforms this calendar actually has posts on.
+   */
+  const statusOptions = React.useMemo(() => {
+    const inPlay =
+      platform === "ALL"
+        ? CONTENT_PLATFORMS.filter((option) => posts.some((post) => post.platform === option))
+        : [toContentPlatform(platform)]
+    return statusesForPlatforms(inPlay.length > 0 ? inPlay : CONTENT_PLATFORMS)
+  }, [posts, platform])
 
   /** Tapping a day in the month view jumps to that card, opened. */
   const openFromCalendar = (postId: string) => {
@@ -292,7 +309,11 @@ export function PostList({
                 className="border-input bg-background h-9 rounded-md border px-2 text-sm font-normal"
               >
                 <option value="ALL">Any status</option>
-                {CONTENT_STATUSES.map((option) => (
+                {/* The one already chosen stays listed even off-track, so the
+                    select never shows a value it does not offer. */}
+                {CONTENT_STATUSES.filter(
+                  (option) => statusOptions.includes(option) || option === status,
+                ).map((option) => (
                   <option key={option} value={option}>
                     {CONTENT_STATUS_LABELS[option]}
                   </option>
@@ -358,54 +379,48 @@ export function PostList({
         </div>
       </div>
 
-      {/* Platform tabs, as the same segmented control the people directory uses
-          for roles: picking a channel is the coarsest cut anyone makes here, so
-          it stays one tap away rather than living behind the Filters panel, and
-          the counts riding alongside each label make the split obvious without
-          opening anything. Horizontally scrollable because four channels plus
-          All overflow a phone. */}
-      <div
-        role="tablist"
-        aria-label="Filter by platform"
-        className="bg-muted flex w-full gap-1 overflow-x-auto rounded-md p-1 sm:w-fit"
-      >
-        {platformTabs.map((tab) => {
-          const active = platform === tab.value
-          return (
-            <button
-              key={tab.value}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setPlatform(tab.value)}
-              className={cn(
-                "flex shrink-0 cursor-pointer items-center gap-1.5 rounded-sm px-3 py-1.5 text-sm font-medium transition-colors",
-                active
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {tab.value === "ALL" ? null : <PlatformIcon platform={tab.value} />}
-              {tab.label}
-              <span
+      {/* One button per platform — its mark and its name, nothing else. There
+          is no "All": tapping the selected platform again lets go of it, which
+          is every platform. Kept out of the Filters panel because picking a
+          channel is the coarsest cut anyone makes here. Horizontally scrollable
+          because four channels overflow a phone. */}
+      {platformTabs.length > 0 ? (
+        <div
+          role="group"
+          aria-label="Filter by platform"
+          className="bg-muted flex w-full gap-1 overflow-x-auto rounded-md p-1 sm:w-fit"
+        >
+          {platformTabs.map((option) => {
+            const active = platform === option
+            return (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setPlatform(active ? "ALL" : option)}
                 className={cn(
-                  "text-xs tabular-nums",
-                  active ? "text-muted-foreground" : "text-muted-foreground/70",
+                  "flex shrink-0 items-center gap-1.5 rounded-sm px-3 py-1.5 text-sm font-medium transition-colors",
+                  active
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                {tab.count}
-              </span>
-            </button>
-          )
-        })}
-      </div>
+                <PlatformIcon platform={option} />
+                {CONTENT_PLATFORM_LABELS[option]}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
 
       {view === "calendar" ? (
         <>
           <CalendarGrid
             posts={filtered}
+            statuses={statusOptions}
             initialMonth={selectedCycle?.startDate ?? null}
             onSelect={openFromCalendar}
+            onOpenDay={canManage ? setDayDate : undefined}
             onAdd={canManage && calendarId ? setAddDate : undefined}
           />
           {/* Keyed on the date so picking a second day starts a clean form
@@ -418,6 +433,37 @@ export function PostList({
               open
               onOpenChange={(next) => {
                 if (!next) setAddDate(null)
+              }}
+            />
+          ) : null}
+          {dayDate ? (
+            <DayDialog
+              date={dayDate}
+              posts={filtered.filter((post) => post.scheduledDate === dayDate)}
+              onClose={() => setDayDate(null)}
+              onView={(postId) => {
+                setDayDate(null)
+                openFromCalendar(postId)
+              }}
+              onEdit={(postId) => {
+                setDayDate(null)
+                setEditId(postId)
+              }}
+              onAdd={() => {
+                setAddDate(dayDate)
+                setDayDate(null)
+              }}
+            />
+          ) : null}
+          {/* No script passed: no card is open in this view to borrow it
+              from, so the editor loads it itself. */}
+          {editPost ? (
+            <PostEditor
+              key={editPost.id}
+              post={editPost}
+              open
+              onOpenChange={(next) => {
+                if (!next) setEditId(null)
               }}
             />
           ) : null}
@@ -451,6 +497,7 @@ export function PostList({
                 canManage={canManage}
                 canDelete={canDelete}
                 canComment={canComment}
+                canDecide={canDecide}
                 driveEnabled={driveEnabled}
                 open={openIds.has(post.id)}
                 detailVersion={detailVersion}

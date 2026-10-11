@@ -210,6 +210,21 @@ export function statusesForKind(kind: ContentKind, platform: ContentPlatform): C
 }
 
 /**
+ * Every status a post on these platforms could be in, in CONTENT_STATUSES
+ * order — what the calendar's key and the status filter list, so a LinkedIn
+ * calendar is not offered "Shoot pending".
+ */
+export function statusesForPlatforms(platforms: readonly ContentPlatform[]): ContentStatus[] {
+  const offered = new Set<ContentStatus>()
+  for (const platform of platforms) {
+    for (const kind of contentKindsForPlatform(platform)) {
+      for (const status of statusesForKind(kind, platform)) offered.add(status)
+    }
+  }
+  return CONTENT_STATUSES.filter((status) => offered.has(status))
+}
+
+/**
  * A status this kind can actually be in.
  *
  * Rows written before the tracks were split — or by an older client that has
@@ -579,6 +594,15 @@ export function canViewPost(actor: Actor, post: { sharedAt: Date | null }, isOwn
   return isOwner && post.sharedAt !== null
 }
 
+/**
+ * Who may approve or reject a post: the client it was made for, and the Super
+ * Admin on their behalf. The rest of the team reads the verdict but cannot give
+ * it — an approval recorded by the people who made the post is not one.
+ */
+export function canDecideApproval(actor: Actor, isOwner: boolean) {
+  return isOwner || actor.role === "SUPER_ADMIN"
+}
+
 /** Who may post feedback. Both sides talk here, on shared posts only. */
 export function canCommentOnPost(actor: Actor, post: { sharedAt: Date | null }, isOwner: boolean) {
   if (can(actor, "content:manage")) return true
@@ -776,7 +800,9 @@ export function toPostView(post: LoadedListPost, actor: Actor): PostView {
     rawFileUrl: post.rawFileUrl,
     finalEditUrl: post.finalEditUrl,
     rawFolderUrl: post.rawFolderUrl,
-    editsFolderUrl: post.editsFolderUrl,
+    // The folder holds every finished piece, not just this one, so it is the
+    // team's link — stripped for the client the same way the notes are.
+    editsFolderUrl: canManage ? post.editsFolderUrl : null,
     commentCount: post._count.comments,
     assetCount: post._count.assets,
     search: [
