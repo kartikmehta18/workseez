@@ -217,7 +217,7 @@ export function bodyToHtml(body: string) {
   return isRichBody(body) ? sanitizeRichHtml(body.slice(RICH_MARK.length)) : plainToHtml(body)
 }
 
-/** A stored body as plain text — for counting words, searching and pasting into LinkedIn. */
+/** A stored body as plain text — for counting its length, searching and pasting into LinkedIn. */
 export function bodyToPlain(body: string) {
   return isRichBody(body) ? htmlToPlain(body.slice(RICH_MARK.length)) : body
 }

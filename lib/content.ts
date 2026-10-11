@@ -383,12 +383,12 @@ export function isContentBodyLabel(label: string) {
   return CONTENT_BODY_ALIASES.includes(label.trim().toLowerCase())
 }
 
-/** How long a LinkedIn description may run. */
-export const MAX_DESCRIPTION_WORDS = 1800
+/** How long a LinkedIn description may run, in characters of its plain text. */
+export const MAX_DESCRIPTION_CHARS = 1800
 
-export function countWords(text: string) {
-  const trimmed = text.trim()
-  return trimmed ? trimmed.split(/\s+/).length : 0
+/** Spaces and line breaks count; formatting markup and the padding around the text do not. */
+export function countChars(text: string) {
+  return text.trim().length
 }
 
 /**

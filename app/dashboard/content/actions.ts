@@ -17,7 +17,7 @@ import {
   canDecideApproval,
   CONTENT_KIND_LABELS,
   CONTENT_STATUS_LABELS,
-  countWords,
+  countChars,
   DEFAULT_CYCLE_LENGTH,
   defaultStatusForKind,
   formatDayMonth,
@@ -28,7 +28,7 @@ import {
   isLiveStatus,
   isVideoKind,
   MAX_COMMENT_LENGTH,
-  MAX_DESCRIPTION_WORDS,
+  MAX_DESCRIPTION_CHARS,
   MAX_SCRIPT_LINES,
   parseDateInput,
   seedScriptLines,
@@ -393,16 +393,16 @@ function parsePostFields(formData: FormData): PostFields | { error: string } {
 }
 
 /**
- * A LinkedIn description is capped in words. The dialog counts as it is typed;
+ * A LinkedIn description is capped in characters. The dialog counts as it is typed;
  * this is the same limit where it cannot be skipped.
  */
 function descriptionError(fields: PostFields, lines: ParsedLine[]): string | null {
   if (fields.platform !== "LINKEDIN" || isVideoKind(fields.kind)) return null
   const tooLong = lines.some(
-    (line) => isContentBodyLabel(line.label) && countWords(bodyToPlain(line.body)) > MAX_DESCRIPTION_WORDS,
+    (line) => isContentBodyLabel(line.label) && countChars(bodyToPlain(line.body)) > MAX_DESCRIPTION_CHARS,
   )
   return tooLong
-    ? `The description is limited to ${MAX_DESCRIPTION_WORDS.toLocaleString("en-US")} words.`
+    ? `The description is limited to ${MAX_DESCRIPTION_CHARS.toLocaleString("en-US")} characters.`
     : null
 }
 
