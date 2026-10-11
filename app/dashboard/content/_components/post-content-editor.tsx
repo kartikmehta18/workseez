@@ -17,10 +17,10 @@ import {
   CONTENT_BODY_ALIASES,
   contentBlockTitle,
   contentBodyLabel,
-  countWords,
+  countChars,
   defaultScriptLabels,
   isVideoKind,
-  MAX_DESCRIPTION_WORDS,
+  MAX_DESCRIPTION_CHARS,
   MAX_SCRIPT_LINES,
   type ContentKind,
   type ContentPlatform,
@@ -123,7 +123,7 @@ export function PostContentEditor({
   /** Namespaces the aria labels, so two dialogs on a page stay distinguishable. */
   idPrefix: string
   kind: ContentKind
-  /** Decides what the copy field is called, and whether it is word-limited. */
+  /** Decides what the copy field is called, and whether it is length-limited. */
   platform: ContentPlatform
   initialLines: DraftLine[]
   /**
@@ -226,11 +226,11 @@ export function PostContentEditor({
     const contentRow = findByLabel(draft, CONTENT_ALIASES)!
 
     // On LinkedIn the copy is the post: it is called the description, capped
-    // in words, and copyable so it can be pasted straight in.
+    // in characters, and copyable so it can be pasted straight in.
     const isLinkedIn = platform === "LINKEDIN"
     const bodyLabel = contentBodyLabel(platform)
-    const words = countWords(bodyToPlain(contentRow.body))
-    const overLimit = isLinkedIn && words > MAX_DESCRIPTION_WORDS
+    const chars = countChars(bodyToPlain(contentRow.body))
+    const overLimit = isLinkedIn && chars > MAX_DESCRIPTION_CHARS
     const noteRows = isLinkedIn ? draft.filter(isNoteRow) : []
 
     /** Writes one of the two rows, matched on the key this render drew. */
@@ -355,7 +355,7 @@ export function PostContentEditor({
                   overLimit ? "text-destructive font-medium" : "text-muted-foreground",
                 )}
               >
-                {words.toLocaleString()} / {MAX_DESCRIPTION_WORDS.toLocaleString()} words
+                {chars.toLocaleString()} / {MAX_DESCRIPTION_CHARS.toLocaleString()} characters
                 {overLimit ? " — over the limit, shorten it before saving." : ""}
               </p>
             ) : null}
