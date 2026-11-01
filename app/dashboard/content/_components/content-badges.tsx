@@ -27,6 +27,7 @@ import {
   toContentKind,
   toContentPlatform,
   toContentStatus,
+  type calendarProgressByPlatform,
   type ContentKind,
   type ContentPlatform,
   type ContentStatus,
@@ -112,15 +113,15 @@ export function PostStatusBadge({
 }: {
   status: string | null | undefined
   /**
-   * The post's type, where the caller has it. Statuses belong to one track or
-   * the other, so this is what stops a row still stored as "Scripting" from
-   * showing that word on a carousel. Callers reading a PostView are already
-   * normalized; this is for the two places that render a status straight off
-   * the query.
+   * The post's type. Statuses belong to one track or the other, so this is what
+   * stops a row still stored as "Scripting" from showing that word on a
+   * carousel. Required even for an already normalized PostView: left out, the
+   * status is read against the default track, and a valid LinkedIn "To be
+   * posted" is rewritten to "Scripting".
    */
-  kind?: string | null
-  /** Passed alongside `kind` — LinkedIn posts have a track of their own. */
-  platform?: string | null
+  kind: string | null | undefined
+  /** Required with `kind` — LinkedIn posts have a track of their own. */
+  platform: string | null | undefined
   className?: string
 }) {
   if (!status) {
@@ -324,20 +325,33 @@ export function CalendarProgressBar({
   percent,
   published,
   total,
+  platform,
   className,
 }: {
   percent: number
   published: number
   total: number
+  /** Names the channel these counts cover. Left out, they cover the whole calendar. */
+  platform?: ContentPlatform
   className?: string
 }) {
   const complete = total > 0 && published === total
+  const platformLabel = platform ? CONTENT_PLATFORM_LABELS[platform] : null
 
   return (
     <div className={cn("min-w-0", className)}>
-      <div className="text-muted-foreground flex items-baseline justify-between gap-2 text-xs">
-        <span>
-          {published} of {total} published
+      <div className="text-muted-foreground flex items-center justify-between gap-2 text-xs">
+        <span className="flex min-w-0 flex-wrap items-center gap-x-1.5">
+          {platform ? (
+            <>
+              <PlatformIcon platform={platform} />
+              <span className="text-foreground font-medium">{platformLabel}</span>
+              <span aria-hidden>·</span>
+            </>
+          ) : null}
+          <span>
+            {published} of {total} published
+          </span>
         </span>
         <span className="tabular-nums">{percent}%</span>
       </div>
@@ -347,7 +361,7 @@ export function CalendarProgressBar({
         aria-valuenow={percent}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-label="Content calendar progress"
+        aria-label={`${platformLabel ?? "Content calendar"} progress`}
       >
         <div
           className={cn(
@@ -357,6 +371,37 @@ export function CalendarProgressBar({
           style={{ width: `${percent}%` }}
         />
       </div>
+    </div>
+  )
+}
+
+/**
+ * One bar per channel the calendar has posts on. An empty calendar has no
+ * channels to list, so it keeps the single empty bar rather than rendering
+ * nothing in the space the page has left for it.
+ */
+export function CalendarPlatformProgress({
+  platforms,
+  className,
+}: {
+  platforms: ReturnType<typeof calendarProgressByPlatform>
+  className?: string
+}) {
+  if (platforms.length === 0) {
+    return <CalendarProgressBar percent={0} published={0} total={0} className={className} />
+  }
+
+  return (
+    <div className={cn("min-w-0 space-y-3", className)}>
+      {platforms.map(({ platform, percent, published, total }) => (
+        <CalendarProgressBar
+          key={platform}
+          platform={platform}
+          percent={percent}
+          published={published}
+          total={total}
+        />
+      ))}
     </div>
   )
 }

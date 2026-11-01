@@ -8,6 +8,7 @@ import { getVisibleClient } from "@/lib/clients"
 import { can } from "@/lib/rbac"
 import {
   calendarProgress,
+  calendarProgressByPlatform,
   currentCycleNumber,
   formatDayMonth,
   toCycleOptions,
@@ -17,7 +18,7 @@ import {
 import { getCalendarForClient } from "@/lib/content-queries"
 import { driveConfigured, driveRootFolderId } from "@/lib/drive"
 import { Button } from "@/components/ui/button"
-import { CalendarProgressBar } from "@/app/dashboard/content/_components/content-badges"
+import { CalendarPlatformProgress } from "@/app/dashboard/content/_components/content-badges"
 import { CycleBar } from "@/app/dashboard/content/_components/calendar-settings"
 import { CreateCalendarDialog } from "@/app/dashboard/content/_components/create-calendar-dialog"
 import { CreatePostDialog } from "@/app/dashboard/content/_components/create-post-dialog"
@@ -122,11 +123,7 @@ export default async function ClientContentPage({ params }: { params: Promise<{ 
 
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="min-w-0 rounded-lg border p-4 sm:col-span-2">
-          <CalendarProgressBar
-            percent={progress.percent}
-            published={progress.published}
-            total={progress.total}
-          />
+          <CalendarPlatformProgress platforms={calendarProgressByPlatform(calendar.posts)} />
           <p className="text-muted-foreground mt-2 text-xs">
             {progress.total === 0
               ? "Nothing on the calendar yet."
@@ -180,7 +177,6 @@ export default async function ClientContentPage({ params }: { params: Promise<{ 
       <PostList
         posts={posts}
         cycles={cycles}
-        initialCycle={currentCycle}
         viewerRole={actor.role}
         canManage
         canDelete={canDelete}

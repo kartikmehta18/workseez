@@ -295,6 +295,7 @@ export const MAX_UPLOAD_FILES = 10
 export const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024
 
 export const DEFAULT_CYCLE_LENGTH = 30
+export const MAX_CYCLE_LENGTH = 365
 
 export function isContentKind(value: string): value is ContentKind {
   return (CONTENT_KINDS as readonly string[]).includes(value)
@@ -383,14 +384,6 @@ export function isContentBodyLabel(label: string) {
   return CONTENT_BODY_ALIASES.includes(label.trim().toLowerCase())
 }
 
-/** How long a LinkedIn description may run, in characters of its plain text. */
-export const MAX_DESCRIPTION_CHARS = 1800
-
-/** Spaces and line breaks count; formatting markup and the padding around the text do not. */
-export function countChars(text: string) {
-  return text.trim().length
-}
-
 /**
  * What the two delivery links are called — the same two columns either way,
  * but a filmed post ends in a cut and a designed one ends in the artwork, so
@@ -403,7 +396,7 @@ export function countChars(text: string) {
 export function contentLinkLabels(kind: ContentKind, platform: ContentPlatform) {
   const raw =
     platform === "LINKEDIN"
-      ? { raw: "Drive link", rawLink: "Drive link" }
+      ? { raw: "Post Drive link", rawLink: "Post Drive link" }
       : { raw: "Raw file", rawLink: "Raw file link" }
   return isVideoKind(kind)
     ? { ...raw, final: "Final edit", folder: "Edits folder", folderHint: "Where the finished cuts live" }
@@ -457,6 +450,26 @@ export function cycleNumberFor(date: Date, cycleStart: Date, cycleLength: number
   const offset = daysBetween(cycleStart, date)
   if (offset < 0) return 0
   return Math.floor(offset / Math.max(1, cycleLength)) + 1
+}
+
+/** The last day of a cycle this long, as a date input value; "" without a start. */
+export function cycleEndDate(cycleStart: string, cycleLength: number) {
+  const start = parseDateInput(cycleStart)
+  return start ? toDateInputValue(addDays(start, cycleLength - 1)) : ""
+}
+
+/**
+ * How many days a cycle runs between two date input values, counting both ends
+ * — the inverse of `cycleEndDate`. Null unless it is a length a cycle can have.
+ * Rounded rather than floored: a span crossing a clock change is an hour short
+ * of a whole number of days.
+ */
+export function cycleLengthBetween(cycleStart: string, cycleEnd: string) {
+  const start = parseDateInput(cycleStart)
+  const end = parseDateInput(cycleEnd)
+  if (!start || !end) return null
+  const days = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1
+  return days >= 1 && days <= MAX_CYCLE_LENGTH ? days : null
 }
 
 export function cycleFor(number: number, cycleStart: Date, cycleLength: number): Cycle {
@@ -854,6 +867,18 @@ export function calendarProgress(posts: CountablePost[]) {
     published,
     percent: total === 0 ? 0 : Math.round((published / total) * 100),
   }
+}
+
+/**
+ * The same counts split by channel, in tab order, and only for the channels this
+ * calendar has posts on. One number across platforms hides a channel that has
+ * stalled behind one that is ahead.
+ */
+export function calendarProgressByPlatform(posts: (CountablePost & { platform: string })[]) {
+  return CONTENT_PLATFORMS.flatMap((platform) => {
+    const own = posts.filter((post) => toContentPlatform(post.platform) === platform)
+    return own.length > 0 ? [{ platform, ...calendarProgress(own) }] : []
+  })
 }
 
 /**

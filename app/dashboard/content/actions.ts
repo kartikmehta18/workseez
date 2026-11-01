@@ -12,23 +12,20 @@ import {
   sendContentStatusEmail,
 } from "@/lib/emails"
 import { assertCan, can, ForbiddenError, type Actor } from "@/lib/rbac"
-import { bodyToPlain, cleanSubmittedBody } from "@/lib/rich-text"
+import { cleanSubmittedBody } from "@/lib/rich-text"
 import {
   canDecideApproval,
   CONTENT_KIND_LABELS,
   CONTENT_STATUS_LABELS,
-  countChars,
   DEFAULT_CYCLE_LENGTH,
   defaultStatusForKind,
   formatDayMonth,
-  isContentBodyLabel,
   isContentKind,
   isContentPlatform,
   isContentStatus,
   isLiveStatus,
-  isVideoKind,
   MAX_COMMENT_LENGTH,
-  MAX_DESCRIPTION_CHARS,
+  MAX_CYCLE_LENGTH,
   MAX_SCRIPT_LINES,
   parseDateInput,
   seedScriptLines,
@@ -140,7 +137,7 @@ async function actorWith(
  * That courtesy now costs the caller nothing. Every send is handed to `after`,
  * which runs it once the response has gone out, so a status change returns as
  * soon as the row is written rather than holding the spinner through a lookup
- * of the recipients and an SMTP round trip to Gmail. Publishing a whole cycle
+ * of the recipients and a round trip to the mail API. Publishing a whole cycle
  * was the worst of it: one recipient lookup and one blocking send *per post*,
  * in series, before the button came back.
  *
@@ -275,8 +272,8 @@ export async function saveCalendarSettings(formData: FormData): Promise<ActionRe
 
   const title = String(formData.get("title") ?? "").trim()
   const rawLength = Number(formData.get("cycleLength") ?? DEFAULT_CYCLE_LENGTH)
-  if (!Number.isInteger(rawLength) || rawLength < 1 || rawLength > 365) {
-    return fail("A cycle has to be between 1 and 365 days.")
+  if (!Number.isInteger(rawLength) || rawLength < 1 || rawLength > MAX_CYCLE_LENGTH) {
+    return fail(`A cycle has to be between 1 and ${MAX_CYCLE_LENGTH} days.`)
   }
 
   const rawFolderUrl = String(formData.get("rawFolderUrl") ?? "").trim()
@@ -393,20 +390,6 @@ function parsePostFields(formData: FormData): PostFields | { error: string } {
 }
 
 /**
- * A LinkedIn description is capped in characters. The dialog counts as it is typed;
- * this is the same limit where it cannot be skipped.
- */
-function descriptionError(fields: PostFields, lines: ParsedLine[]): string | null {
-  if (fields.platform !== "LINKEDIN" || isVideoKind(fields.kind)) return null
-  const tooLong = lines.some(
-    (line) => isContentBodyLabel(line.label) && countChars(bodyToPlain(line.body)) > MAX_DESCRIPTION_CHARS,
-  )
-  return tooLong
-    ? `The description is limited to ${MAX_DESCRIPTION_CHARS.toLocaleString("en-US")} characters.`
-    : null
-}
-
-/**
  * Creates a post, with its script seeded from the default labels for the kind
  * chosen — a reel gets shoot direction, hooks and a CTA, a static post gets a
  * concept and copy. Every label is editable afterwards.
@@ -428,9 +411,6 @@ export async function createPost(formData: FormData): Promise<ActionResult> {
 
   const lines = parseScriptLines(formData)
   if (!Array.isArray(lines)) return fail(lines.error)
-
-  const tooLong = descriptionError(fields, lines)
-  if (tooLong) return fail(tooLong)
 
   const publishNow = formData.get("publishNow") === "on"
 
@@ -505,9 +485,6 @@ export async function savePost(formData: FormData): Promise<ActionResult> {
 
   const lines = parseScriptLines(formData)
   if (!Array.isArray(lines)) return fail(lines.error)
-
-  const tooLong = descriptionError(fields, lines)
-  if (tooLong) return fail(tooLong)
 
   // Ids are assigned here rather than by the database so the whole script can be
   // written with a fixed number of statements — the same approach the strategy
@@ -641,9 +618,9 @@ export async function publishAllPosts(formData: FormData): Promise<ActionResult>
   })
 
   // One call for the whole batch: the recipients are the same for every post,
-  // so this resolves them once and then sends sequentially (the SMTP transport
-  // is a single pooled connection, and a burst of parallel sends is how you get
-  // rate-limited) — all of it after the response has already gone out.
+  // so this resolves them once and then sends sequentially (the mailer paces
+  // sends to stay under Resend's per-second limit) — all of it after the
+  // response has already gone out.
   notifyClientPublished(calendar.clientId, pending)
 
   revalidateCalendar(calendar.clientId)

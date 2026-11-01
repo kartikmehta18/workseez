@@ -27,6 +27,9 @@ import { PostEditor } from "./post-editor"
 
 type View = "list" | "calendar"
 
+/** The dashboard's sticky header (h-14), which a card can slide behind. */
+const HEADER_HEIGHT = 56
+
 /**
  * The calendar body — filters, then either the card list or the month grid.
  *
@@ -38,7 +41,6 @@ type View = "list" | "calendar"
 export function PostList({
   posts,
   cycles,
-  initialCycle,
   viewerRole,
   canManage,
   canDelete,
@@ -51,7 +53,6 @@ export function PostList({
 }: {
   posts: PostView[]
   cycles: CycleOption[]
-  initialCycle: number | null
   viewerRole: string
   canManage: boolean
   canDelete: boolean
@@ -71,12 +72,16 @@ export function PostList({
   const [query, setQuery] = React.useState("")
   const [status, setStatus] = React.useState("ALL")
   const [kind, setKind] = React.useState("ALL")
-  const [platform, setPlatform] = React.useState("ALL")
-  const [cycle, setCycle] = React.useState(() => (initialCycle ? String(initialCycle) : "ALL"))
+  // Null until a tab is tapped, which is what lets the first tab be the default
+  // below. "ALL" is a real choice: tapping the selected tab lets go of it.
+  const [chosenPlatform, setChosenPlatform] = React.useState<string | null>(null)
+  // Opens on every post; narrowing to a cycle is the viewer's choice.
+  const [cycle, setCycle] = React.useState("ALL")
   const [from, setFrom] = React.useState("")
   const [to, setTo] = React.useState("")
   const [showFilters, setShowFilters] = React.useState(false)
-  const [openIds, setOpenIds] = React.useState<ReadonlySet<string>>(() => new Set())
+  // One card at a time: opening a post closes whichever was open before it.
+  const [openId, setOpenId] = React.useState<string | null>(null)
 
   /**
    * Bumped whenever the server sends a new list, which is what a mutation does
@@ -131,6 +136,20 @@ export function PostList({
     })
   }, [posts, query, status, kind, selectedCycle, from, to])
 
+  /**
+   * The first tab, selected without anyone asking so the calendar opens on one
+   * channel. Derived rather than stored: a calendar that opens empty still
+   * selects a tab once its first post arrives, and a search that only matches
+   * the second channel lands there instead of on an empty first one.
+   */
+  const firstPlatform = React.useMemo(
+    () =>
+      CONTENT_PLATFORMS.find((option) => beforePlatform.some((post) => post.platform === option)) ??
+      "ALL",
+    [beforePlatform],
+  )
+  const platform = chosenPlatform ?? firstPlatform
+
   const filtered = React.useMemo(
     () =>
       platform === "ALL"
@@ -158,11 +177,15 @@ export function PostList({
   // card would change every card's props on every keystroke and re-render the
   // whole list anyway.
   const toggle = React.useCallback((postId: string) => {
-    setOpenIds((current) => {
-      const next = new Set(current)
-      if (next.has(postId)) next.delete(postId)
-      else next.add(postId)
-      return next
+    setOpenId((current) => (current === postId ? null : postId))
+    // Closing a tall card above this one pulls it up the page, possibly behind
+    // the sticky header or off the screen. Measured after the commit, and only
+    // corrected then, so tapping a card that stayed put never moves the page.
+    requestAnimationFrame(() => {
+      const card = document.getElementById(`post-${postId}`)
+      if (card && card.getBoundingClientRect().top < HEADER_HEIGHT) {
+        card.scrollIntoView({ block: "start" })
+      }
     })
   }, [])
 
@@ -197,7 +220,7 @@ export function PostList({
 
   /** Tapping a day in the month view jumps to that card, opened. */
   const openFromCalendar = (postId: string) => {
-    setOpenIds((current) => new Set(current).add(postId))
+    setOpenId(postId)
     setView("list")
     // After the list has rendered — the card does not exist to scroll to yet.
     requestAnimationFrame(() => {
@@ -209,7 +232,7 @@ export function PostList({
     query !== "" ||
     status !== "ALL" ||
     kind !== "ALL" ||
-    platform !== "ALL" ||
+    platform !== firstPlatform ||
     cycle !== "ALL" ||
     from !== "" ||
     to !== ""
@@ -218,7 +241,7 @@ export function PostList({
     setQuery("")
     setStatus("ALL")
     setKind("ALL")
-    setPlatform("ALL")
+    setChosenPlatform(null)
     setCycle("ALL")
     setFrom("")
     setTo("")
@@ -397,7 +420,7 @@ export function PostList({
                 key={option}
                 type="button"
                 aria-pressed={active}
-                onClick={() => setPlatform(active ? "ALL" : option)}
+                onClick={() => setChosenPlatform(active ? "ALL" : option)}
                 className={cn(
                   "flex shrink-0 items-center gap-1.5 rounded-sm px-3 py-1.5 text-sm font-medium transition-colors",
                   active
@@ -499,7 +522,7 @@ export function PostList({
                 canComment={canComment}
                 canDecide={canDecide}
                 driveEnabled={driveEnabled}
-                open={openIds.has(post.id)}
+                open={openId === post.id}
                 detailVersion={detailVersion}
                 onToggle={toggle}
               />

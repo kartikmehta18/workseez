@@ -5,10 +5,10 @@ import { prisma } from "@/lib/db"
 import { getCurrentActor, requireActor } from "@/lib/auth"
 import { getVisibleClient } from "@/lib/clients"
 import { can, canSeeClientEmail } from "@/lib/rbac"
-import { calendarProgress } from "@/lib/content"
+import { calendarProgress, calendarProgressByPlatform } from "@/lib/content"
 import { formProgress } from "@/lib/onboarding"
 import { sheetProgress } from "@/lib/strategy"
-import { CalendarProgressBar } from "@/app/dashboard/content/_components/content-badges"
+import { CalendarPlatformProgress } from "@/app/dashboard/content/_components/content-badges"
 import {
   FormStatusBadge,
   ProgressBar,
@@ -102,6 +102,7 @@ export default async function ClientProfilePage({ params }: { params: Promise<{ 
             title: true,
             posts: {
               select: {
+                platform: true,
                 status: true,
                 sharedAt: true,
                 needsRawUpload: true,
@@ -124,6 +125,7 @@ export default async function ClientProfilePage({ params }: { params: Promise<{ 
   const onboardingProgress = onboarding ? formProgress(onboarding) : null
   const strategyProgress = strategy ? sheetProgress(strategy) : null
   const calendarStats = calendar ? calendarProgress(calendar.posts) : null
+  const platformProgress = calendar ? calendarProgressByPlatform(calendar.posts) : []
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -416,11 +418,7 @@ export default async function ClientProfilePage({ params }: { params: Promise<{ 
             <ArrowRight className="text-muted-foreground ml-auto size-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
           </div>
           <div className="mt-4 max-w-md">
-            <CalendarProgressBar
-              percent={calendarStats.percent}
-              published={calendarStats.published}
-              total={calendarStats.total}
-            />
+            <CalendarPlatformProgress platforms={platformProgress} />
           </div>
         </Link>
       ) : can(actor, "content:manage") ? (

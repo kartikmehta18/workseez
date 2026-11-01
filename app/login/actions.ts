@@ -48,7 +48,13 @@ export async function signInWithKey(
     }
   }
 
-  const result = await signInWithAccessKey(key)
+  let result: Awaited<ReturnType<typeof signInWithAccessKey>>
+  try {
+    result = await signInWithAccessKey(key)
+  } catch (error) {
+    console.error("Key sign-in failed:", error)
+    return { error: "We couldn't sign you in just now. Please try again in a moment." }
+  }
 
   if (!result.ok) {
     return {

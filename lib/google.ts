@@ -27,6 +27,63 @@ export function authorizationUrl(state: string) {
   return `https://accounts.google.com/o/oauth2/v2/auth?${params}`
 }
 
+/**
+ * Where Google sends the admin back after connecting Drive. Separate from the
+ * sign-in callback, and must be listed on the OAuth client as its own URI.
+ */
+function driveRedirectUri() {
+  return `${googleConfig().redirectUri.replace(/\/api\/auth\/callback\/google$/, "")}/api/drive/callback`
+}
+
+/**
+ * The consent screen for connecting the account uploads go through.
+ *
+ * `access_type=offline` is what asks for a refresh token, and `prompt=consent`
+ * is what makes Google issue one even if this account has connected before.
+ */
+export function driveAuthorizationUrl(state: string, scope: string) {
+  const { clientId } = googleConfig()
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: driveRedirectUri(),
+    response_type: "code",
+    scope: `openid email ${scope}`,
+    state,
+    access_type: "offline",
+    prompt: "select_account consent",
+  })
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params}`
+}
+
+/** Exchanges the code from the Drive consent screen for its refresh token. */
+export async function exchangeDriveCode(code: string) {
+  const { clientId, clientSecret } = googleConfig()
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: driveRedirectUri(),
+      grant_type: "authorization_code",
+    }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Google token exchange failed: ${await response.text()}`)
+  }
+
+  const { refresh_token: refreshToken, id_token: idToken } = (await response.json()) as {
+    refresh_token?: string
+    id_token?: string
+  }
+  if (!refreshToken || !idToken) throw new Error("Google did not return a refresh token")
+
+  const { email } = await verifyIdToken(idToken)
+  return { refreshToken, email }
+}
+
 /** Exchanges an authorization code for Google's ID token. */
 export async function exchangeCode(code: string) {
   const { clientId, clientSecret, redirectUri } = googleConfig()

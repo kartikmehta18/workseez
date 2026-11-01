@@ -66,7 +66,6 @@ export function RichTextEditor({
   initialBody,
   onChange,
   placeholder,
-  invalid,
   labelledBy,
 }: {
   id: string
@@ -75,7 +74,6 @@ export function RichTextEditor({
   /** Called with the body to store: sanitized markup, or "" when there is no text. */
   onChange: (body: string) => void
   placeholder?: string
-  invalid?: boolean
   labelledBy?: string
 }) {
   const ref = React.useRef<HTMLDivElement>(null)
@@ -117,7 +115,6 @@ export function RichTextEditor({
         role="textbox"
         aria-multiline="true"
         aria-labelledby={labelledBy}
-        aria-invalid={invalid || undefined}
         contentEditable
         suppressContentEditableWarning
         onInput={emit}
@@ -126,7 +123,6 @@ export function RichTextEditor({
         className={cn(
           "border-input bg-background text-foreground ring-offset-background focus-visible:ring-ring max-h-96 min-h-32 w-full overflow-y-auto rounded-md border px-3 py-2 text-base focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none md:text-sm",
           RICH_TEXT_CLASS,
-          invalid && "border-destructive",
         )}
       />
       {empty && placeholder ? (
