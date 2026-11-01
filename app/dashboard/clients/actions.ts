@@ -16,7 +16,7 @@ import {
 import { labelFromUrl, MAX_CLIENT_LINKS, normalizeUrl } from "@/lib/links"
 
 /**
- * `emailed` is false when SMTP is unset or the send failed — the client is
+ * `emailed` is false when mail is not configured or the send failed — the client is
  * created either way. `accessKey` is the plaintext 6-digit key, handed back so
  * the UI can show it once; nothing can read it after that.
  */

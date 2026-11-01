@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { CloudUpload, ExternalLink, FileVideo, FolderOpen, Loader2, Trash2 } from "lucide-react"
 
@@ -12,14 +13,48 @@ import { deleteAsset } from "../actions"
 
 const EXTERNAL = { target: "_blank", rel: "noopener noreferrer" } as const
 
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+  // A non-JSON body means something upstream failed, and the fallback covers it.
+  const payload = (await response.json().catch(() => null)) as ({ error?: string } & T) | null
+  if (!response.ok || !payload) {
+    throw new Error(payload?.error ?? "The upload didn't go through. Try again.")
+  }
+  return payload
+}
+
+/**
+ * Sends one file straight to Drive's upload session.
+ *
+ * XHR instead of fetch: it is the only way to get real upload progress, and a
+ * client sending 800 MB over hotel wifi needs to see the bar move or they will
+ * close the tab.
+ *
+ * Always resolves. A failed send is not an error here, because the browser can
+ * report one on a file that arrived safely — whether it got there is the
+ * server's to check with Drive afterwards.
+ */
+function sendToDrive(uploadUrl: string, file: File, onProgress: (loaded: number) => void) {
+  return new Promise<void>((resolve) => {
+    const request = new XMLHttpRequest()
+    request.open("PUT", uploadUrl)
+    request.setRequestHeader("Content-Type", file.type || "application/octet-stream")
+    request.upload.addEventListener("progress", (event) => onProgress(event.loaded))
+    request.addEventListener("loadend", () => resolve())
+    request.send(file)
+  })
+}
+
 /**
  * Uploading footage for one post.
  *
- * Files go to a route handler rather than a server action — actions cap the
- * request body at a couple of megabytes, which a single reel clears easily.
- * That also means XHR instead of fetch: it is the only way to get real upload
- * progress, and a client sending 800 MB over hotel wifi needs to see the bar
- * move or they will close the tab.
+ * The files go directly from the browser to Drive, in three steps: ask the
+ * server for upload sessions, send each file, then have the server record what
+ * arrived. Nothing large passes through this app's own server.
  */
 export function RawUpload({
   postId,
@@ -39,6 +74,7 @@ export function RawUpload({
   urgent?: boolean
   kind?: "RAW" | "EDIT"
 }) {
+  const router = useRouter()
   const inputRef = React.useRef<HTMLInputElement>(null)
   const [files, setFiles] = React.useState<File[]>([])
   const [progress, setProgress] = React.useState<number | null>(null)
@@ -46,47 +82,50 @@ export function RawUpload({
 
   const uploading = progress !== null
 
-  const upload = () => {
+  const upload = async () => {
     if (files.length === 0) return
-
-    const formData = new FormData()
-    formData.set("kind", kind)
-    for (const file of files) formData.append("files", file)
-
     setProgress(0)
-    const request = new XMLHttpRequest()
-    request.open("POST", `/api/content/posts/${postId}/upload`)
 
-    request.upload.addEventListener("progress", (event) => {
-      if (event.lengthComputable) setProgress(Math.round((event.loaded / event.total) * 100))
-    })
+    try {
+      const { uploads } = await postJson<{ uploads: { fileId: string; uploadUrl: string }[] }>(
+        `/api/content/posts/${postId}/upload`,
+        { files: files.map(({ name, size, type }) => ({ name, size, type })) },
+      )
 
-    request.addEventListener("load", () => {
-      setProgress(null)
-      let payload: { error?: string; uploaded?: unknown[] } = {}
-      try {
-        payload = JSON.parse(request.responseText)
-      } catch {
-        // A non-JSON body means something upstream failed — the status tells
-        // the story well enough on its own.
+      // One at a time, against one bar: a bar per file means nothing to someone
+      // watching a single upload, and parallel videos fight over the same wifi.
+      const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
+      let sentBytes = 0
+      for (const [index, session] of uploads.entries()) {
+        const file = files[index]
+        await sendToDrive(session.uploadUrl, file, (loaded) => {
+          if (totalBytes > 0) setProgress(Math.round(((sentBytes + loaded) / totalBytes) * 100))
+        })
+        sentBytes += file.size
       }
 
-      if (request.status >= 200 && request.status < 300) {
-        const count = payload.uploaded?.length ?? files.length
-        toast.success(`${count} ${count === 1 ? "file" : "files"} uploaded. Your team is notified.`)
+      const { uploaded, missing } = await postJson<{ uploaded: number; missing: number }>(
+        `/api/content/posts/${postId}/upload/complete`,
+        { kind, fileIds: uploads.map((session) => session.fileId) },
+      )
+
+      if (missing > 0) {
+        toast.error(
+          `${uploaded} of ${uploaded + missing} files arrived. Check your connection and upload the rest again.`,
+        )
+      } else {
+        toast.success(
+          `${uploaded} ${uploaded === 1 ? "file" : "files"} uploaded. Your team is notified.`,
+        )
         setFiles([])
         if (inputRef.current) inputRef.current.value = ""
-      } else {
-        toast.error(payload.error ?? "The upload didn't go through. Try again.")
       }
-    })
-
-    request.addEventListener("error", () => {
+      router.refresh()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The upload didn't go through. Try again.")
+    } finally {
       setProgress(null)
-      toast.error("The upload was interrupted. Check your connection and try again.")
-    })
-
-    request.send(formData)
+    }
   }
 
   const onRemove = (assetId: string, name: string) => {

@@ -4,7 +4,7 @@ import { ArrowRight, CalendarDays } from "lucide-react"
 import { requireActor } from "@/lib/auth"
 import { can, isTeamRole, type Actor } from "@/lib/rbac"
 import {
-  calendarProgress,
+  calendarProgressByPlatform,
   currentCycleNumber,
   formatDayMonth,
   toCycleOptions,
@@ -16,7 +16,7 @@ import { getOwnCalendar, listCalendarOverviews } from "@/lib/content-queries"
 import { driveConfigured } from "@/lib/drive"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
-import { CalendarProgressBar, PostStatusBadge } from "./_components/content-badges"
+import { CalendarPlatformProgress, PostStatusBadge } from "./_components/content-badges"
 import { CreateCalendarDialog } from "./_components/create-calendar-dialog"
 import { CycleBar } from "./_components/calendar-settings"
 import { PostList } from "./_components/post-list"
@@ -58,9 +58,6 @@ async function ClientView({ actor }: { actor: Actor }) {
     calendar,
     calendar.posts.map((post) => post.scheduledFor),
   )
-  const currentCycle = calendar.cycleStart
-    ? currentCycleNumber(calendar.cycleStart, calendar.cycleLength)
-    : null
   const waiting = posts.filter((post) => post.needsRawUpload).length
 
   return (
@@ -104,7 +101,6 @@ async function ClientView({ actor }: { actor: Actor }) {
       <PostList
         posts={posts}
         cycles={cycles}
-        initialCycle={currentCycle}
         viewerRole={actor.role}
         canManage={false}
         canDelete={false}
@@ -154,7 +150,7 @@ async function TeamView({ actor }: { actor: Actor }) {
         <ul className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {overviews.map((client) => {
             const calendar = client.contentCalendar
-            const progress = calendar ? calendarProgress(calendar.posts) : null
+            const platformProgress = calendar ? calendarProgressByPlatform(calendar.posts) : []
             const feedback =
               calendar?.posts.reduce((sum, post) => sum + post._count.comments, 0) ?? 0
             const unpublished = calendar
@@ -230,12 +226,8 @@ async function TeamView({ actor }: { actor: Actor }) {
                   ) : null}
 
                   <div className="mt-auto pt-4">
-                    {progress && progress.total > 0 ? (
-                      <CalendarProgressBar
-                        percent={progress.percent}
-                        published={progress.published}
-                        total={progress.total}
-                      />
+                    {platformProgress.length > 0 ? (
+                      <CalendarPlatformProgress platforms={platformProgress} />
                     ) : (
                       <p className="text-muted-foreground text-xs">
                         {calendar

@@ -28,7 +28,12 @@ export default async function LoginPage({
   searchParams: Promise<{ error?: string; next?: string }>
 }) {
   const { error, next } = await searchParams
-  const actor = await getCurrentActor()
+  // Only here to bounce an already signed-in visitor to the dashboard. If the
+  // database is unreachable, showing the sign-in form beats a crashed page.
+  const actor = await getCurrentActor().catch((error) => {
+    console.error("Login page could not load the current user:", error)
+    return null
+  })
   const target = safeNextPath(next)
   if (actor?.status === "ACTIVE") redirect(target)
 

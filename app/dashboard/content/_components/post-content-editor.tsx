@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { cn } from "@/lib/utils"
 import { bodyToHtml, bodyToPlain, isRichBody } from "@/lib/rich-text"
 import { CopyButton } from "./copy-button"
 import { RichTextEditor } from "./rich-text-editor"
@@ -17,10 +16,8 @@ import {
   CONTENT_BODY_ALIASES,
   contentBlockTitle,
   contentBodyLabel,
-  countChars,
   defaultScriptLabels,
   isVideoKind,
-  MAX_DESCRIPTION_CHARS,
   MAX_SCRIPT_LINES,
   type ContentKind,
   type ContentPlatform,
@@ -225,12 +222,10 @@ export function PostContentEditor({
     const titleRow = findByLabel(draft, TITLE_ALIASES)!
     const contentRow = findByLabel(draft, CONTENT_ALIASES)!
 
-    // On LinkedIn the copy is the post: it is called the description, capped
-    // in characters, and copyable so it can be pasted straight in.
+    // On LinkedIn the copy is the post: it is called the description, and is
+    // copyable so it can be pasted straight in.
     const isLinkedIn = platform === "LINKEDIN"
     const bodyLabel = contentBodyLabel(platform)
-    const chars = countChars(bodyToPlain(contentRow.body))
-    const overLimit = isLinkedIn && chars > MAX_DESCRIPTION_CHARS
     const noteRows = isLinkedIn ? draft.filter(isNoteRow) : []
 
     /** Writes one of the two rows, matched on the key this render drew. */
@@ -333,7 +328,6 @@ export function PostContentEditor({
                   initialBody={contentRow.body}
                   onChange={(body) => writeRow(contentRow.key, body)}
                   placeholder="The post itself — what goes out on LinkedIn."
-                  invalid={overLimit}
                 />
               </>
             ) : (
@@ -348,17 +342,6 @@ export function PostContentEditor({
                 className="min-h-32 resize-y"
               />
             )}
-            {isLinkedIn ? (
-              <p
-                className={cn(
-                  "text-xs",
-                  overLimit ? "text-destructive font-medium" : "text-muted-foreground",
-                )}
-              >
-                {chars.toLocaleString()} / {MAX_DESCRIPTION_CHARS.toLocaleString()} characters
-                {overLimit ? " — over the limit, shorten it before saving." : ""}
-              </p>
-            ) : null}
           </div>
 
           {isLinkedIn ? (

@@ -24,7 +24,7 @@ import {
 } from "@/lib/rbac"
 
 /**
- * `emailed` is false when SMTP is unset or the send failed — the invite stands
+ * `emailed` is false when mail is not configured or the send failed — the invite stands
  * either way. `accessKey` is the plaintext key, returned so the UI can show it
  * once: it is unreadable from that point on, which is exactly what makes it the
  * fallback when the mail didn't leave.

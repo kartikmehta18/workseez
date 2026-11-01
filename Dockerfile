@@ -42,9 +42,8 @@ RUN npm run build
 #
 # This ships the traced-free full production node_modules rather than
 # `output: "standalone"`. Standalone would be a smaller image, but this app
-# reaches runtime code the tracer does not follow reliably — nodemailer is
-# already declared in serverExternalPackages, and the Prisma driver adapter
-# loads mariadb through the same kind of indirection. Correctness over MBs.
+# reaches runtime code the tracer does not follow reliably — the Prisma driver
+# adapter loads mariadb through an indirection it misses. Correctness over MBs.
 # ---------------------------------------------------------------------------
 FROM node:${NODE_VERSION} AS runner
 WORKDIR /app

@@ -16,6 +16,12 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+  cycleEndDate,
+  cycleLengthBetween,
+  DEFAULT_CYCLE_LENGTH,
+  MAX_CYCLE_LENGTH,
+} from "@/lib/content"
 import { deleteCalendar, saveCalendarSettings } from "../actions"
 
 export type CalendarSettings = {
@@ -61,6 +67,77 @@ export function CycleBar({
         All {settings.cycleLength}-day cycles shift with this date.
       </p>
     </div>
+  )
+}
+
+/**
+ * Cycle 1's first and last day. The calendar stores a length, not an end date,
+ * so the end is worked out from it here and turned back into a length on save.
+ *
+ * `length` is held apart from the end date so moving the start carries a chosen
+ * length along with it, and so a half-typed year in the end date, which reads
+ * as a real date in year 0002, never replaces it. The min and max on the end
+ * date are what stop the form submitting one that is out of range.
+ */
+function CycleDates({
+  initialStart,
+  initialLength,
+}: {
+  initialStart: string
+  initialLength: number
+}) {
+  const [start, setStart] = React.useState(initialStart)
+  const [end, setEnd] = React.useState(() => cycleEndDate(initialStart, initialLength))
+  const [length, setLength] = React.useState(initialLength)
+
+  const changeStart = (next: string) => {
+    setStart(next)
+    setEnd(cycleEndDate(next, length))
+  }
+
+  const changeEnd = (next: string) => {
+    setEnd(next)
+    if (!next) setLength(DEFAULT_CYCLE_LENGTH)
+    else setLength((current) => cycleLengthBetween(start, next) ?? current)
+  }
+
+  return (
+    <>
+      {/* The end date below has no name: this is what the form submits. */}
+      <input type="hidden" name="cycleLength" value={length} />
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-2">
+          <Label htmlFor="calendar-cycle-start">Cycle 1 starts</Label>
+          <Input
+            id="calendar-cycle-start"
+            name="cycleStart"
+            type="date"
+            value={start}
+            onChange={(event) => changeStart(event.target.value)}
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="calendar-cycle-end">Cycle 1 ends</Label>
+          <Input
+            id="calendar-cycle-end"
+            type="date"
+            value={end}
+            min={start || undefined}
+            max={cycleEndDate(start, MAX_CYCLE_LENGTH) || undefined}
+            disabled={!start}
+            onChange={(event) => changeEnd(event.target.value)}
+          />
+        </div>
+      </div>
+
+      <p className="text-muted-foreground -mt-1 text-xs">
+        {start ? `Every cycle runs ${length} ${length === 1 ? "day" : "days"}. ` : null}
+        Cycles run back to back from the start date, so changing it moves every cycle. Clear the
+        end date to go back to {DEFAULT_CYCLE_LENGTH} days, or leave the start empty to drop the
+        cycle grouping and work from one flat list.
+      </p>
+    </>
   )
 }
 
@@ -135,33 +212,7 @@ function SettingsDialog({
               />
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="grid gap-2">
-                <Label htmlFor="calendar-cycle-start">Cycle 1 starts</Label>
-                <Input
-                  id="calendar-cycle-start"
-                  name="cycleStart"
-                  type="date"
-                  defaultValue={settings.cycleStart}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="calendar-cycle-length">Cycle length (days)</Label>
-                <Input
-                  id="calendar-cycle-length"
-                  name="cycleLength"
-                  type="number"
-                  min={1}
-                  max={365}
-                  defaultValue={settings.cycleLength}
-                />
-              </div>
-            </div>
-
-            <p className="text-muted-foreground -mt-1 text-xs">
-              Cycles run back to back from that date, so changing it moves every cycle. Leave it
-              empty to drop the cycle grouping and work from one flat list.
-            </p>
+            <CycleDates initialStart={settings.cycleStart} initialLength={settings.cycleLength} />
 
             <div className="grid gap-2">
               <Label htmlFor="calendar-raw">Raw footage folder</Label>

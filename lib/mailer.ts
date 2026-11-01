@@ -1,64 +1,49 @@
 import { readFile } from "node:fs/promises"
 import path from "node:path"
-import nodemailer, { type Transporter } from "nodemailer"
+import { Resend } from "resend"
 import { configuredOrigin } from "@/lib/urls"
 
 /**
- * SMTP is optional: a developer running the portal locally without mail
- * credentials should still be able to invite people. When the host is missing
- * every send is skipped (and logged) instead of throwing, so the invite itself
- * never fails because of mail configuration.
+ * Mail goes out through Resend's HTTP API rather than SMTP: one HTTPS request
+ * per message, no pooled sockets to keep alive, and no Gmail sending limits.
+ *
+ * It is optional: a developer running the portal locally without a key should
+ * still be able to invite people. When RESEND_API_KEY is missing every send is
+ * skipped (and logged) instead of throwing, so the invite itself never fails
+ * because of mail configuration.
+ *
+ * Cached on globalThis for the same reason as the Prisma pool. `mailClientKey`
+ * is the key the cached client was built from: the dev server re-reads .env
+ * when it is edited but this cache outlives that, so without it a corrected key
+ * kept failing with the old one until the server was restarted by hand.
  */
-function smtpConfig() {
-  const host = process.env.SMTP_HOST
-  if (!host) return null
+const globalForMail = globalThis as unknown as {
+  mailClient?: Resend | null
+  mailClientKey?: string
+  mailLogo?: Buffer
+  nextMailSlot?: number
+}
 
-  const port = Number(process.env.SMTP_PORT || 587)
-  const user = process.env.SMTP_USER
-  const pass = process.env.SMTP_PASSWORD
-
-  return {
-    host,
-    port,
-    // Port 465 is implicit TLS; 587 starts plaintext and upgrades via STARTTLS.
-    // SMTP_SECURE overrides the guess for hosts that do neither by convention.
-    secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === "true" : port === 465,
-    auth: user && pass ? { user, pass } : undefined,
+function client(): Resend | null {
+  const apiKey = process.env.RESEND_API_KEY || ""
+  if (globalForMail.mailClient !== undefined && globalForMail.mailClientKey === apiKey) {
+    return globalForMail.mailClient
   }
+  globalForMail.mailClient = apiKey ? new Resend(apiKey) : null
+  globalForMail.mailClientKey = apiKey
+  return globalForMail.mailClient
 }
 
 /**
- * Cached on globalThis for the same reason as the Prisma pool: the transport is
- * built at module scope, so every dev hot reload would otherwise leave another
- * pool of open SMTP connections behind.
- *
- * `mailTransportKey` is the config the cached transport was built from. The
- * dev server re-reads .env when it is edited but this cache outlives that, so
- * without the key a corrected SMTP password kept failing with the old one until
- * the server was restarted by hand.
+ * The sender must be on a domain verified in Resend. Resend's shared
+ * onboarding@resend.dev works without one, but only delivers to the address
+ * that owns the Resend account — fine for a first test, not for real invites.
  */
-const globalForMail = globalThis as unknown as {
-  mailTransport?: Transporter | null
-  mailTransportKey?: string
-  mailLogo?: Buffer
-}
-
-function transport(): Transporter | null {
-  const config = smtpConfig()
-  const key = JSON.stringify(config)
-  if (globalForMail.mailTransport !== undefined && globalForMail.mailTransportKey === key) {
-    return globalForMail.mailTransport
-  }
-  // The settings changed under a live transport: drop its pooled connections.
-  globalForMail.mailTransport?.close()
-
-  // `pool` keeps one connection warm across the handful of mails this app
-  // sends, rather than reconnecting (and re-authenticating) per invite.
-  const created = config ? nodemailer.createTransport({ ...config, pool: true }) : null
-
-  globalForMail.mailTransport = created
-  globalForMail.mailTransportKey = key
-  return created
+function sender() {
+  const from = process.env.MAIL_FROM?.trim() || "Workseez <onboarding@resend.dev>"
+  // Resend rejects a bare "<a@b.com>", the likeliest slip when setting the
+  // variable by hand: it needs a name in front or no brackets at all.
+  return from.startsWith("<") ? `Workseez ${from}` : from
 }
 
 /**
@@ -75,9 +60,41 @@ async function logoAttachment() {
   return {
     filename: "workseez.jpeg",
     content: globalForMail.mailLogo,
-    cid: LOGO_CID,
+    // Setting contentId is what makes Resend send it inline, so the template's
+    // <img src="cid:workseez-logo"> resolves instead of showing as a download.
+    contentId: LOGO_CID,
     contentType: "image/jpeg",
   }
+}
+
+/**
+ * Resend allows a team 2 requests a second, and the notification loops send
+ * one mail per post or per team member back to back — publishing a cycle of
+ * ten posts would otherwise burst well past it. Each send reserves the next
+ * free slot before it waits; the reservation is synchronous, so concurrent
+ * callers in this process queue up rather than race. Other processes share
+ * the same limit, which is what the retry in sendMail is for.
+ */
+const MIN_GAP_MS = 550
+const RATE_LIMIT_RETRIES = 3
+
+async function waitForSendSlot() {
+  const now = Date.now()
+  const slot = Math.max(now, globalForMail.nextMailSlot ?? 0)
+  globalForMail.nextMailSlot = slot + MIN_GAP_MS
+  if (slot > now) await new Promise((resolve) => setTimeout(resolve, slot - now))
+}
+
+/**
+ * Nodemailer accepted "a@x.com, b@y.com" as a list and some callers still pass
+ * one (the access-key request goes to every admin). Resend wants an array for
+ * more than one recipient.
+ */
+function recipients(to: string) {
+  return to
+    .split(",")
+    .map((address) => address.trim())
+    .filter(Boolean)
 }
 
 export type MailInput = {
@@ -99,22 +116,49 @@ export async function sendMail({ to, subject, html, text }: MailInput): Promise<
   // only through the access key their admin reads out to them.
   if (!to) return false
 
-  const mailer = transport()
-  if (!mailer) {
-    console.warn(`[mail] SMTP_HOST is not set — skipped "${subject}" to ${to}`)
+  const resend = client()
+  if (!resend) {
+    console.warn(`[mail] RESEND_API_KEY is not set — skipped "${subject}" to ${to}`)
     return false
   }
 
   try {
-    await mailer.sendMail({
-      from: process.env.MAIL_FROM || `"Workseez" <${process.env.SMTP_USER}>`,
-      to,
+    const message = {
+      from: sender(),
+      to: recipients(to),
       subject,
       text,
       html,
       attachments: [await logoAttachment()],
-    })
-    return true
+    }
+
+    // Enough to diagnose a failed send from the deployment's logs: which sender
+    // and which key this deployment really has. Only the key's last four
+    // characters — they tell keys apart, and the rest must never reach a log.
+    console.log(
+      `[mail] sending "${subject}" to ${to} from ${message.from} (key …${process.env.RESEND_API_KEY?.slice(-4)})`,
+    )
+
+    // Resend reports API failures (unverified sender, bad key, rate limit) in
+    // `error` rather than by throwing; the catch is for network failures.
+    for (let attempt = 1; ; attempt++) {
+      await waitForSendSlot()
+      const { data, error } = await resend.emails.send(message)
+      if (!error) {
+        console.log(`[mail] accepted "${subject}" to ${to} — Resend id ${data?.id}`)
+        return true
+      }
+
+      if (error.name === "rate_limit_exceeded" && attempt <= RATE_LIMIT_RETRIES) {
+        console.warn(`[mail] rate limited on "${subject}" to ${to} — retry ${attempt}/${RATE_LIMIT_RETRIES}`)
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt))
+        continue
+      }
+      console.error(
+        `[mail] Resend rejected "${subject}" to ${to} from ${message.from}: ${error.statusCode} ${error.name} — ${error.message}`,
+      )
+      return false
+    }
   } catch (error) {
     console.error(`[mail] failed to send "${subject}" to ${to}`, error)
     return false

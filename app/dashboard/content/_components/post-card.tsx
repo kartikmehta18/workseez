@@ -130,8 +130,8 @@ function DetailSkeleton() {
  * is the wrong control on a phone, which is where most clients read this.
  *
  * Open state is owned by the list, not by the card: tapping a day in the month
- * view has to be able to open the post it belongs to, and "expand all" has to
- * reach every card at once.
+ * view has to be able to open the post it belongs to, and only one card is open
+ * at a time, so opening this one has to close the last.
  *
  * Memoised because the list re-renders on every keystroke in its filter box,
  * and an expanded card is an expensive thing to rebuild — a Radix dialog, a
@@ -207,7 +207,7 @@ export const PostCard = React.memo(function PostCard({
       >
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <PostStatusBadge status={post.status} />
+            <PostStatusBadge status={post.status} kind={post.kind} platform={post.platform} />
             {/* Shown to both sides, unlike the kind badge — which channel a post
                 goes out on is the client's own question, not working detail. */}
             <PostPlatformBadge platform={post.platform} />

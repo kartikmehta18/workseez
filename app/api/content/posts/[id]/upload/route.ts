@@ -1,96 +1,58 @@
-import { revalidatePath } from "next/cache"
 import type { NextRequest } from "next/server"
 
 import { prisma } from "@/lib/db"
-import { getCurrentActor } from "@/lib/auth"
-import { clientScopeFor } from "@/lib/clients"
-import { calendarRecipients } from "@/lib/content-queries"
-import { sendContentUploadEmail } from "@/lib/emails"
-import { can } from "@/lib/rbac"
-import { isAssetKind, MAX_UPLOAD_BYTES, MAX_UPLOAD_FILES, toDateInputValue } from "@/lib/content"
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_FILES, toDateInputValue } from "@/lib/content"
 import {
-  driveConfigured,
+  createUploadSession,
   driveErrorMessage,
   ensureFolder,
   folderIdFromUrl,
   folderUrl,
-  uploadFile,
 } from "@/lib/drive"
+import { authorizeUpload } from "@/lib/post-upload"
+import { publicOrigin } from "@/lib/urls"
 
 /**
- * Raw footage upload for one post.
+ * Starts a raw footage upload for one post.
  *
- * A route handler rather than a server action on purpose: server actions cap
- * the request body at a couple of megabytes, and this endpoint exists to move
- * video. Here the file is handed to Drive as a Blob, so it streams through
- * instead of being buffered whole.
+ * The browser sends the files straight to Drive, so this only sees their names
+ * and sizes: it finds the post's folder and opens one upload session per file.
+ * The `complete` route beside this one records what actually arrived.
  *
- * Everything is re-checked server-side — a client may only upload to their own
- * post, and only once the team has published it to them.
+ * A route handler rather than a server action so both steps share one URL and
+ * one set of status codes for the upload dialog to read.
  */
 
 function json(body: unknown, status = 200) {
   return Response.json(body, { status })
 }
 
-export async function POST(request: NextRequest, ctx: RouteContext<"/api/content/posts/[id]/upload">) {
-  const actor = await getCurrentActor()
-  if (!actor || actor.status !== "ACTIVE") {
-    return json({ error: "Your session has expired. Sign in again." }, 401)
-  }
+type RequestedFile = { name: string; size: number; type: string }
 
+function isRequestedFile(value: unknown): value is RequestedFile {
+  const file = value as RequestedFile | null
+  return (
+    typeof file?.name === "string" &&
+    file.name.length > 0 &&
+    Number.isSafeInteger(file.size) &&
+    file.size >= 0 &&
+    typeof file.type === "string"
+  )
+}
+
+export async function POST(request: NextRequest, ctx: RouteContext<"/api/content/posts/[id]/upload">) {
   const { id } = await ctx.params
 
-  const post = await prisma.contentPost.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      title: true,
-      sharedAt: true,
-      scheduledFor: true,
-      rawFolderId: true,
-      rawFolderUrl: true,
-      rawFileUrl: true,
-      calendar: {
-        select: {
-          clientId: true,
-          rawFolderId: true,
-          rawFolderUrl: true,
-          client: { select: { name: true, ownerUserId: true, driveUrl: true } },
-        },
-      },
-    },
-  })
-  if (!post) return json({ error: "Post not found." }, 404)
+  const access = await authorizeUpload(id)
+  if (!access.ok) return json({ error: access.error }, access.status)
+  const { post } = access
 
-  const isOwner = post.calendar.client.ownerUserId === actor.id
-  const canManage =
-    can(actor, "content:manage") &&
-    (await prisma.client.count({
-      where: { AND: [{ id: post.calendar.clientId }, clientScopeFor(actor)] },
-    })) > 0
+  const body = (await request.json().catch(() => null)) as { files?: unknown } | null
+  const files = Array.isArray(body?.files) ? body.files : []
 
-  if (!isOwner && !canManage) return json({ error: "You can't upload to this post." }, 403)
-  if (isOwner && !canManage && !post.sharedAt) {
-    return json({ error: "This post isn't open yet." }, 403)
+  if (files.length === 0 || !files.every(isRequestedFile)) {
+    return json({ error: "Choose at least one file." }, 400)
   }
-
-  if (!driveConfigured()) {
-    return json(
-      {
-        error:
-          "Uploads aren't switched on for this portal yet. Add your files to the Drive folder directly — the link is on the card.",
-      },
-      503,
-    )
-  }
-
-  const formData = await request.formData()
-  const files = formData.getAll("files").filter((entry): entry is File => entry instanceof File)
-  const kindValue = String(formData.get("kind") ?? "RAW")
-  const kind = isAssetKind(kindValue) ? kindValue : "RAW"
-
-  if (files.length === 0) return json({ error: "Choose at least one file." }, 400)
   if (files.length > MAX_UPLOAD_FILES) {
     return json({ error: `Up to ${MAX_UPLOAD_FILES} files at a time.` }, 400)
   }
@@ -102,18 +64,25 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/content
     )
   }
 
-  // Where the files land. The post gets its own folder under the calendar's raw
-  // folder, created on first upload, so a month of shoots does not end up as one
-  // undifferentiated pile.
-  let parentId = post.rawFolderId
-  let parentUrl = post.rawFolderUrl
+  const calendarFolderId =
+    post.calendar.rawFolderId ??
+    folderIdFromUrl(post.calendar.rawFolderUrl) ??
+    folderIdFromUrl(post.calendar.client.driveUrl)
+
+  // Where the files land: the Raw folder link on the post, read fresh so a link
+  // the team changes takes effect on the next upload. A new post starts with a
+  // copy of the calendar's link, though, and uploading straight into that would
+  // leave a month of shoots as one undifferentiated pile — so a link that is
+  // still the calendar's gets a folder of its own inside it instead.
+  const linkedFolderId = folderIdFromUrl(post.rawFolderUrl)
+  let parentId = linkedFolderId !== calendarFolderId ? linkedFolderId : null
+
+  if (parentId && parentId !== post.rawFolderId) {
+    // What `complete` checks the arriving files against.
+    await prisma.contentPost.update({ where: { id: post.id }, data: { rawFolderId: parentId } })
+  }
 
   if (!parentId) {
-    const calendarFolderId =
-      post.calendar.rawFolderId ??
-      folderIdFromUrl(post.calendar.rawFolderUrl) ??
-      folderIdFromUrl(post.calendar.client.driveUrl)
-
     if (!calendarFolderId) {
       return json(
         {
@@ -134,81 +103,37 @@ export async function POST(request: NextRequest, ctx: RouteContext<"/api/content
         calendarFolderId,
       )
       parentId = folder.id
-      parentUrl = folder.webViewLink ?? folderUrl(folder.id)
+
+      // Saved now, not at the end: this is the folder `complete` checks the
+      // files against, and a second upload should reuse it either way.
+      await prisma.contentPost.update({
+        where: { id: post.id },
+        data: { rawFolderId: folder.id, rawFolderUrl: folder.webViewLink ?? folderUrl(folder.id) },
+      })
     } catch (error) {
       return json({ error: driveErrorMessage(error) }, 502)
     }
   }
 
-  const uploaded: { id: string; name: string; url: string | null }[] = []
+  const origin = request.headers.get("origin") ?? publicOrigin(request)
 
-  for (const file of files) {
-    try {
-      const result = await uploadFile({
-        parentId,
-        name: file.name,
-        mimeType: file.type || "application/octet-stream",
-        body: file,
-      })
-
-      const asset = await prisma.contentAsset.create({
-        data: {
-          postId: post.id,
-          name: result.name,
-          kind,
-          driveFileId: result.id,
-          url: result.webViewLink,
-          mimeType: file.type || null,
-          sizeBytes: file.size,
-          uploadedById: actor.id,
-        },
-        select: { id: true, name: true, url: true },
-      })
-      uploaded.push(asset)
-    } catch (error) {
-      // Partial success is reported as success for what got through: re-running
-      // the upload for the remaining files is easy, re-uploading a 1 GB file
-      // that already landed is not.
-      const message = driveErrorMessage(error)
-      if (uploaded.length === 0) return json({ error: message }, 502)
-      return json({ uploaded, error: message, partial: true }, 207)
-    }
-  }
-
-  await prisma.contentPost.update({
-    where: { id: post.id },
-    data: {
-      rawFolderId: parentId,
-      rawFolderUrl: parentUrl,
-      // The first raw file doubles as the "Raw file" button on the card, unless
-      // the team has already pointed that at something specific.
-      rawFileUrl: post.rawFileUrl ?? uploaded[0]?.url ?? null,
-      // The ask has been answered.
-      ...(kind === "RAW" && isOwner ? { needsRawUpload: false } : {}),
-    },
-  })
-
-  // The team is told the footage arrived — the client's card already shows it.
-  if (isOwner && !canManage) {
-    try {
-      const recipients = await calendarRecipients(post.calendar.clientId)
-      for (const member of recipients?.team ?? []) {
-        await sendContentUploadEmail({
-          to: member.email,
-          clientName: post.calendar.client.name,
-          postTitle: post.title,
-          fileCount: uploaded.length,
-          folderUrl: parentUrl,
-          clientId: post.calendar.clientId,
+  try {
+    const folderId = parentId
+    const uploads = await Promise.all(
+      files.map(async (file) => {
+        const session = await createUploadSession({
+          parentId: folderId,
+          name: file.name,
+          // Sent to Drive as a header, so anything but a plain media type is dropped.
+          mimeType: /^[\w.+-]+\/[\w.+-]+$/.test(file.type) ? file.type : "application/octet-stream",
+          size: file.size,
+          origin,
         })
-      }
-    } catch (error) {
-      console.error("[content] upload notification failed", error)
-    }
+        return { name: file.name, ...session }
+      }),
+    )
+    return json({ uploads })
+  } catch (error) {
+    return json({ error: driveErrorMessage(error) }, 502)
   }
-
-  revalidatePath("/dashboard/content")
-  revalidatePath(`/dashboard/clients/${post.calendar.clientId}/content`)
-
-  return json({ uploaded, folderUrl: parentUrl })
 }
