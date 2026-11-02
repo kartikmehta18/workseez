@@ -14,7 +14,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -23,8 +22,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { DEFAULT_CYCLE_LENGTH } from "@/lib/content"
+import { DEFAULT_CYCLE_LENGTH, toDateInputValue } from "@/lib/content"
 import { createCalendar } from "../actions"
+import { CycleDates } from "./calendar-settings"
 
 export type SelectableClient = { id: string; name: string; company: string | null }
 
@@ -88,14 +88,12 @@ export function CreateCalendarDialog({ clients }: { clients: SelectableClient[] 
               </Select>
             </div>
 
-            <div className="grid gap-2">
-              <Label htmlFor="calendar-start">Cycle 1 starts</Label>
-              <Input id="calendar-start" name="cycleStart" type="date" />
-              <p className="text-muted-foreground text-xs">
-                Optional. Cycles are {DEFAULT_CYCLE_LENGTH} days long and run back to back from this
-                date — you can change it, and the length, at any time.
-              </p>
-            </div>
+            {/* Starts today and runs the default 30 days; picking a start moves
+                the end along with it. */}
+            <CycleDates
+              initialStart={toDateInputValue(new Date())}
+              initialLength={DEFAULT_CYCLE_LENGTH}
+            />
 
             <p className="text-muted-foreground text-xs">
               The client&apos;s existing Drive link is used for uploads to start with. Point it at a

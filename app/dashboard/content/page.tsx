@@ -158,7 +158,7 @@ async function TeamView({ actor }: { actor: Actor }) {
               : 0
             const cycle =
               calendar?.cycleStart != null
-                ? currentCycleNumber(calendar.cycleStart, calendar.cycleLength)
+                ? currentCycleNumber({ ...calendar, cycleStart: calendar.cycleStart })
                 : null
             // The next thing going out, which is what a manager scanning the
             // roster actually wants to know.

@@ -58,9 +58,8 @@ import { createPost } from "../actions"
  * reel gets a script skeleton of shoot direction and hooks, a post or a carousel
  * gets the title and copy that go out instead.
  *
- * "Publish now" is off by default. Writing a post and showing it to the client
- * are two decisions, and the wrong default puts unfinished direction in front
- * of them.
+ * "Publish now" is on by default — most posts go straight to the client. Untick
+ * it to keep a post that still needs work hidden until it is published.
  */
 export function CreatePostDialog({
   calendarId,
@@ -350,7 +349,12 @@ function NewPostForm({
         ) : null}
 
         <label className="flex items-start gap-2.5 rounded-lg border p-3 text-sm">
-          <input type="checkbox" name="publishNow" className="accent-primary mt-0.5 size-4" />
+          <input
+            type="checkbox"
+            name="publishNow"
+            defaultChecked
+            className="accent-primary mt-0.5 size-4"
+          />
           <span>
             <span className="font-medium">Publish to the client straight away</span>
             <span className="text-muted-foreground block text-xs">

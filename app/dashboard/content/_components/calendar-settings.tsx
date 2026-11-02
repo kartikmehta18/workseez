@@ -79,7 +79,7 @@ export function CycleBar({
  * as a real date in year 0002, never replaces it. The min and max on the end
  * date are what stop the form submitting one that is out of range.
  */
-function CycleDates({
+export function CycleDates({
   initialStart,
   initialLength,
 }: {

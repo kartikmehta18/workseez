@@ -63,8 +63,11 @@ export type Permission =
   // and Drive links. Like strategy:manage this is the team's own document, so
   // there is no narrower "edit the content" grant.
   | "content:manage"
-  // Delete a post or a whole calendar. Held back from managers for the same
-  // reason as strategy:delete — it discards the client's feedback with it.
+  // Delete a single post. Managers hold this one: pruning a cycle is part of
+  // running it, and the scope check keeps them to their own clients' posts.
+  | "content:deletePost"
+  // Delete a whole calendar or anyone's feedback. Held back from managers for
+  // the same reason as strategy:delete — it discards the client's feedback.
   | "content:delete"
 
 const PERMISSIONS: Record<Role, Permission[]> = {
@@ -86,6 +89,7 @@ const PERMISSIONS: Record<Role, Permission[]> = {
     "strategy:manage",
     "strategy:delete",
     "content:manage",
+    "content:deletePost",
     "content:delete",
   ],
   // Admins run day-to-day operations but cannot change roles — only the
@@ -103,13 +107,14 @@ const PERMISSIONS: Record<Role, Permission[]> = {
     "strategy:manage",
     "strategy:delete",
     "content:manage",
+    "content:deletePost",
     "content:delete",
   ],
   // Managers only ever see the clients they are assigned to. onboarding:manage,
   // strategy:manage and content:manage are global grants, but every action
   // re-checks visibility through clientScopeFor, so they only ever reach their
   // own clients.
-  MANAGER: ["onboarding:manage", "strategy:manage", "content:manage"],
+  MANAGER: ["onboarding:manage", "strategy:manage", "content:manage", "content:deletePost"],
   CLIENT: [],
 }
 

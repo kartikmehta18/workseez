@@ -334,6 +334,8 @@ model ContentCalendar {
   // back-to-back from here, so moving this date shifts every cycle at once —
   // which is the whole point of storing an anchor instead of per-cycle rows.
   // Null until an admin sets it; the calendar then shows one flat list.
+  // Individual cycles can be re-dated with a ContentCycle row; cycles without
+  // one follow on from the cycle before at cycleLength days.
   cycleStart  DateTime?
   cycleLength Int       @default(30)
 
@@ -352,8 +354,29 @@ model ContentCalendar {
   createdById String?
   createdBy   User?   @relation("ContentCalendarCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
-  client Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   posts  ContentPost[]
+  cycles ContentCycle[]
+}
+
+// The dates of one cycle, set by hand. Only cycles someone has edited have a
+// row — the rest are derived from the calendar's anchor and length, following
+// on from whichever cycle comes before them.
+model ContentCycle {
+  id         String   @id @default(cuid())
+  calendarId String
+  // 1-based, matching "Cycle 4" in the UI.
+  number     Int
+  start      DateTime
+  // Inclusive — the last day of the cycle.
+  end        DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  calendar ContentCalendar @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+
+  @@unique([calendarId, number])
 }
 
 // One reel / post / story. Everything on it is editable by the team at any

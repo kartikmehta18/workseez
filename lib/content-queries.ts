@@ -68,12 +68,16 @@ const POST_ORDER = [
   { createdAt: "asc" },
 ] satisfies Prisma.ContentPostOrderByWithRelationInput[]
 
+/** Hand-set cycle dates — every view that numbers cycles needs them. */
+const CYCLE_SELECT = { number: true, start: true, end: true } satisfies Prisma.ContentCycleSelect
+
 const CALENDAR_INCLUDE = {
   client: {
     select: { id: true, name: true, company: true, ownerUserId: true, driveUrl: true },
   },
   createdBy: { select: { name: true, email: true } },
   posts: { orderBy: POST_ORDER, select: POST_LIST_SELECT },
+  cycles: { select: CYCLE_SELECT },
 } satisfies Prisma.ContentCalendarInclude
 
 export type CalendarWithPosts = NonNullable<Awaited<ReturnType<typeof getCalendarForClient>>>
@@ -184,6 +188,7 @@ export async function listCalendarOverviews(actor: Actor) {
           title: true,
           cycleStart: true,
           cycleLength: true,
+          cycles: { select: CYCLE_SELECT },
           updatedAt: true,
           posts: {
             select: {

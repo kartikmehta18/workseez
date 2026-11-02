@@ -22,6 +22,7 @@ import { CalendarGrid } from "./calendar-grid"
 import { PlatformIcon } from "./content-badges"
 import { CreatePostDialog } from "./create-post-dialog"
 import { DayDialog } from "./day-dialog"
+import { EditCycleDialog } from "./edit-cycle-dialog"
 import { PostCard } from "./post-card"
 import { PostEditor } from "./post-editor"
 
@@ -282,6 +283,10 @@ export function PostList({
                 </option>
               ))}
             </select>
+          ) : null}
+
+          {canManage && calendarId && selectedCycle ? (
+            <EditCycleDialog calendarId={calendarId} cycle={selectedCycle} />
           ) : null}
 
           {/* Phone: Filters left, view switch right, on their own row. From sm

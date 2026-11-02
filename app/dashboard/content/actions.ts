@@ -28,6 +28,7 @@ import {
   MAX_CYCLE_LENGTH,
   MAX_SCRIPT_LINES,
   parseDateInput,
+  planCycleEdit,
   seedScriptLines,
   statusesForKind,
   toContentKind,
@@ -81,6 +82,7 @@ async function loadManageableCalendar(actor: Actor, calendarId: string) {
       clientId: true,
       cycleStart: true,
       cycleLength: true,
+      cycles: { select: { number: true, start: true, end: true } },
       rawFolderId: true,
       rawFolderUrl: true,
       editsFolderUrl: true,
@@ -114,7 +116,7 @@ async function loadManageablePost(actor: Actor, postId: string) {
 type Guard = { ok: true; actor: Actor } | { ok: false; error: string }
 
 async function actorWith(
-  permission: "content:manage" | "content:delete",
+  permission: "content:manage" | "content:deletePost" | "content:delete",
   message: string,
 ): Promise<Guard> {
   const actor = await getCurrentActor()
@@ -226,13 +228,17 @@ export async function createCalendar(formData: FormData): Promise<ActionResult> 
   if (client.contentCalendar) return fail("That client already has a content calendar.")
 
   const cycleStart = parseDateInput(String(formData.get("cycleStart") ?? ""))
+  const cycleLength = Number(formData.get("cycleLength") ?? DEFAULT_CYCLE_LENGTH)
+  if (!Number.isInteger(cycleLength) || cycleLength < 1 || cycleLength > MAX_CYCLE_LENGTH) {
+    return fail(`A cycle has to be between 1 and ${MAX_CYCLE_LENGTH} days.`)
+  }
 
   await prisma.contentCalendar.create({
     data: {
       client: { connect: { id: clientId } },
       createdBy: { connect: { id: actor.id } },
       cycleStart,
-      cycleLength: DEFAULT_CYCLE_LENGTH,
+      cycleLength,
       // Seeded from the client's existing Drive link so the first upload has
       // somewhere to go without a second setup step.
       rawFolderUrl: client.driveUrl,
@@ -279,19 +285,90 @@ export async function saveCalendarSettings(formData: FormData): Promise<ActionRe
   const rawFolderUrl = String(formData.get("rawFolderUrl") ?? "").trim()
   const editsFolderUrl = String(formData.get("editsFolderUrl") ?? "").trim()
 
-  await prisma.contentCalendar.update({
-    where: { id: calendar.id },
-    data: {
-      title: title || "Content Calendar",
-      cycleStart: parseDateInput(String(formData.get("cycleStart") ?? "")),
-      cycleLength: rawLength,
-      rawFolderUrl: rawFolderUrl || null,
-      editsFolderUrl: editsFolderUrl || null,
-      // The resolved folder id is derived from the pasted URL, so changing the
-      // URL must not leave the old id behind for the uploader to write into.
-      rawFolderId: null,
-    },
-  })
+  await prisma.$transaction([
+    prisma.contentCalendar.update({
+      where: { id: calendar.id },
+      data: {
+        title: title || "Content Calendar",
+        cycleStart: parseDateInput(String(formData.get("cycleStart") ?? "")),
+        cycleLength: rawLength,
+        rawFolderUrl: rawFolderUrl || null,
+        editsFolderUrl: editsFolderUrl || null,
+        // The resolved folder id is derived from the pasted URL, so changing the
+        // URL must not leave the old id behind for the uploader to write into.
+        rawFolderId: null,
+      },
+    }),
+    // The settings dialog sets cycle 1's dates outright, so a hand-set end on
+    // cycle 1 would otherwise quietly override what was just saved.
+    prisma.contentCycle.deleteMany({ where: { calendarId: calendar.id, number: 1 } }),
+  ])
+
+  revalidateCalendar(calendar.clientId)
+  return { ok: true }
+}
+
+/**
+ * Re-dates a single cycle. Admins, managers and the Super Admin all hold
+ * content:manage; the scope check in loadManageableCalendar keeps managers to
+ * their own clients.
+ */
+export async function saveCycleDates(formData: FormData): Promise<ActionResult> {
+  const guard = await actorWith("content:manage", "You don't have permission to edit cycles.")
+  if (!guard.ok) return fail(guard.error)
+
+  const calendar = await loadManageableCalendar(guard.actor, String(formData.get("calendarId") ?? ""))
+  if (!calendar) return fail("Content calendar not found.")
+  const { cycleStart } = calendar
+  if (!cycleStart) return fail("Set when cycle 1 starts in the calendar settings first.")
+
+  const number = Number(formData.get("number"))
+  if (!Number.isInteger(number) || number < 1) return fail("That cycle doesn't exist.")
+
+  const start = parseDateInput(String(formData.get("start") ?? ""))
+  const end = parseDateInput(String(formData.get("end") ?? ""))
+  if (!start || !end) return fail("Pick both a start and an end date.")
+
+  const plan = planCycleEdit({ ...calendar, cycleStart }, number, start, end)
+  if (!plan.ok) return fail(plan.error)
+
+  await prisma.$transaction([
+    ...(plan.cycleStart
+      ? [
+          prisma.contentCalendar.update({
+            where: { id: calendar.id },
+            data: { cycleStart: plan.cycleStart },
+          }),
+        ]
+      : []),
+    ...plan.upserts.map((cycle) =>
+      prisma.contentCycle.upsert({
+        where: { calendarId_number: { calendarId: calendar.id, number: cycle.number } },
+        create: { calendarId: calendar.id, ...cycle },
+        update: { start: cycle.start, end: cycle.end },
+      }),
+    ),
+    prisma.contentCycle.deleteMany({
+      where: { calendarId: calendar.id, number: { in: plan.removeNumbers } },
+    }),
+  ])
+
+  revalidateCalendar(calendar.clientId)
+  return { ok: true }
+}
+
+/** Drops a cycle's hand-set dates so it follows on from the cycle before again. */
+export async function resetCycleDates(formData: FormData): Promise<ActionResult> {
+  const guard = await actorWith("content:manage", "You don't have permission to edit cycles.")
+  if (!guard.ok) return fail(guard.error)
+
+  const calendar = await loadManageableCalendar(guard.actor, String(formData.get("calendarId") ?? ""))
+  if (!calendar) return fail("Content calendar not found.")
+
+  const number = Number(formData.get("number"))
+  if (!Number.isInteger(number) || number < 1) return fail("That cycle doesn't exist.")
+
+  await prisma.contentCycle.deleteMany({ where: { calendarId: calendar.id, number } })
 
   revalidateCalendar(calendar.clientId)
   return { ok: true }
@@ -628,7 +705,7 @@ export async function publishAllPosts(formData: FormData): Promise<ActionResult>
 }
 
 export async function deletePost(formData: FormData): Promise<ActionResult> {
-  const guard = await actorWith("content:delete", "Only an admin can delete a post.")
+  const guard = await actorWith("content:deletePost", "You don't have permission to delete posts.")
   if (!guard.ok) return fail(guard.error)
 
   const post = await loadManageablePost(guard.actor, String(formData.get("postId") ?? ""))

@@ -441,17 +441,6 @@ function daysBetween(from: Date, to: Date) {
   return Math.floor(ms / 86_400_000)
 }
 
-/**
- * Which cycle a date falls in, 1-based. Dates before the anchor return 0 — the
- * caller treats that as "outside the schedule" rather than clamping, because a
- * post dated before cycle 1 is a mistake worth showing, not hiding.
- */
-export function cycleNumberFor(date: Date, cycleStart: Date, cycleLength: number) {
-  const offset = daysBetween(cycleStart, date)
-  if (offset < 0) return 0
-  return Math.floor(offset / Math.max(1, cycleLength)) + 1
-}
-
 /** The last day of a cycle this long, as a date input value; "" without a start. */
 export function cycleEndDate(cycleStart: string, cycleLength: number) {
   const start = parseDateInput(cycleStart)
@@ -472,41 +461,156 @@ export function cycleLengthBetween(cycleStart: string, cycleEnd: string) {
   return days >= 1 && days <= MAX_CYCLE_LENGTH ? days : null
 }
 
-export function cycleFor(number: number, cycleStart: Date, cycleLength: number): Cycle {
-  const length = Math.max(1, cycleLength)
-  const start = addDays(startOfDay(cycleStart), (number - 1) * length)
-  return { number, start, end: addDays(start, length - 1) }
+/** A cycle whose dates someone set by hand — a ContentCycle row. */
+export type CycleOverride = { number: number; start: Date; end: Date }
+
+/** Everything a calendar's cycles are worked out from. */
+export type CycleSchedule = {
+  cycleStart: Date | null
+  cycleLength: number
+  /** Hand-set cycles. Optional so a select that skips them still type-checks. */
+  cycles?: CycleOverride[]
+}
+
+/** Safety stop for the walk below — a daily cycle still covers five years. */
+const MAX_CYCLES = 2000
+
+/**
+ * Works out the cycle after `previous` (or cycle 1 when there is none).
+ *
+ * A cycle with no hand-set dates follows on the day after the one before and
+ * runs the calendar's default length. A hand-set cycle keeps its own dates, so
+ * long as they still make sense: a start that now overlaps the cycle before
+ * (because that one was lengthened later) falls back to following on, and an
+ * end before the start falls back to the default length. Cycle 1 always starts
+ * on the calendar's anchor — that date lives in the settings, not here.
+ */
+function nextCycle(
+  previous: Cycle | null,
+  anchor: Date,
+  length: number,
+  override: CycleOverride | undefined,
+): Cycle {
+  const number = previous ? previous.number + 1 : 1
+  const followOn = previous ? addDays(previous.end, 1) : startOfDay(anchor)
+
+  let start = followOn
+  if (previous && override && daysBetween(previous.end, override.start) > 0) {
+    start = startOfDay(override.start)
+  }
+
+  let end = addDays(start, length - 1)
+  if (override && daysBetween(start, override.end) >= 0) end = startOfDay(override.end)
+
+  return { number, start, end }
+}
+
+/**
+ * Walks the cycles from cycle 1 until `reach` returns true for the latest one
+ * and every hand-set cycle has been passed.
+ */
+function walkCycles(schedule: CycleSchedule & { cycleStart: Date }, reach: (cycle: Cycle) => boolean) {
+  const length = Math.max(1, schedule.cycleLength)
+  const overrides = new Map((schedule.cycles ?? []).map((cycle) => [cycle.number, cycle]))
+  const lastOverride = Math.max(0, ...overrides.keys())
+
+  const cycles: Cycle[] = []
+  let previous: Cycle | null = null
+  while (cycles.length < MAX_CYCLES) {
+    const cycle: Cycle = nextCycle(previous, schedule.cycleStart, length, overrides.get(cycles.length + 1))
+    cycles.push(cycle)
+    previous = cycle
+    if (cycle.number >= lastOverride && reach(cycle)) break
+  }
+  return cycles
 }
 
 /**
  * Every cycle worth offering in the dropdown: from cycle 1 through whichever is
- * later, today's cycle or the cycle the last scheduled post lands in. Planning a
- * post three cycles ahead has to make that cycle selectable, and a client
- * catching up months later still needs to reach the current one.
+ * later, today's cycle or the cycle the last scheduled post lands in — and at
+ * least as far as the last hand-set cycle. Planning a post three cycles ahead
+ * has to make that cycle selectable, and a client catching up months later
+ * still needs to reach the current one.
  */
 export function buildCycles({
-  cycleStart,
-  cycleLength,
   dates,
   today = new Date(),
-}: {
+  ...schedule
+}: CycleSchedule & {
   cycleStart: Date
-  cycleLength: number
   dates: (Date | null)[]
   today?: Date
 }): Cycle[] {
-  const length = Math.max(1, cycleLength)
-  const highest = dates.reduce(
-    (max, date) => (date ? Math.max(max, cycleNumberFor(date, cycleStart, length)) : max),
-    cycleNumberFor(today, cycleStart, length),
+  const target = dates.reduce<Date>(
+    (latest, date) => (date && date > latest ? date : latest),
+    today,
   )
-  return Array.from({ length: Math.max(1, highest) }, (_, index) =>
-    cycleFor(index + 1, cycleStart, length),
-  )
+  return walkCycles(schedule, (cycle) => daysBetween(cycle.end, target) <= 0)
 }
 
-export function currentCycleNumber(cycleStart: Date, cycleLength: number, today = new Date()) {
-  return Math.max(1, cycleNumberFor(today, cycleStart, cycleLength))
+/**
+ * The cycle today falls in. Before cycle 1 that is cycle 1; in a gap between
+ * two hand-set cycles it is the one that just ended.
+ */
+export function currentCycleNumber(schedule: CycleSchedule & { cycleStart: Date }, today = new Date()) {
+  const cycles = walkCycles(schedule, (cycle) => daysBetween(cycle.end, today) <= 0)
+  let current = 1
+  for (const cycle of cycles) {
+    if (daysBetween(cycle.start, today) >= 0) current = cycle.number
+  }
+  return current
+}
+
+/**
+ * What saving new dates for one cycle writes.
+ *
+ * The edited cycle gets a row with its new dates. If it now starts on or before
+ * the previous cycle ends, the previous cycle is shortened to end the day
+ * before, rather than refusing the edit. Hand-set cycles after it that would
+ * now overlap are dropped, so they follow on from the new end instead. Cycle
+ * 1's start is the calendar anchor, so moving it moves `cycleStart` too.
+ */
+export function planCycleEdit(
+  schedule: CycleSchedule & { cycleStart: Date },
+  number: number,
+  start: Date,
+  end: Date,
+):
+  | { ok: false; error: string }
+  | { ok: true; cycleStart: Date | null; upserts: CycleOverride[]; removeNumbers: number[] } {
+  start = startOfDay(start)
+  end = startOfDay(end)
+  const days = daysBetween(start, end) + 1
+  if (days < 1) return { ok: false, error: "The end date has to be on or after the start date." }
+  if (days > MAX_CYCLE_LENGTH) {
+    return { ok: false, error: `A cycle can be at most ${MAX_CYCLE_LENGTH} days long.` }
+  }
+
+  const upserts: CycleOverride[] = [{ number, start, end }]
+  let cycleStart: Date | null = null
+
+  if (number === 1) {
+    cycleStart = start
+  } else {
+    const cycles = walkCycles(schedule, (cycle) => cycle.number >= number - 1)
+    const previous = cycles[number - 2]
+    if (previous && daysBetween(previous.end, start) <= 0) {
+      const trimmedEnd = addDays(start, -1)
+      if (daysBetween(previous.start, trimmedEnd) < 0) {
+        return {
+          ok: false,
+          error: `Cycle ${number} can't start before cycle ${number - 1} does. Pick a later start date.`,
+        }
+      }
+      upserts.push({ number: number - 1, start: previous.start, end: trimmedEnd })
+    }
+  }
+
+  const removeNumbers = (schedule.cycles ?? [])
+    .filter((cycle) => cycle.number > number && daysBetween(end, cycle.start) <= 0)
+    .map((cycle) => cycle.number)
+
+  return { ok: true, cycleStart, upserts, removeNumbers }
 }
 
 /** A cycle as the browser gets it — ISO bounds to compare on, a label to show. */
@@ -516,6 +620,8 @@ export type CycleOption = {
   endDate: string
   label: string
   isCurrent: boolean
+  /** Its dates were set by hand rather than worked out from the one before. */
+  isCustom: boolean
 }
 
 /**
@@ -526,23 +632,19 @@ export type CycleOption = {
  * against whichever locale rendered them, and ISO strings sort and compare
  * correctly as plain text, which is what the filter relies on.
  */
-export function toCycleOptions(
-  calendar: { cycleStart: Date | null; cycleLength: number },
-  dates: (Date | null)[],
-): CycleOption[] {
-  if (!calendar.cycleStart) return []
+export function toCycleOptions(calendar: CycleSchedule, dates: (Date | null)[]): CycleOption[] {
+  const { cycleStart } = calendar
+  if (!cycleStart) return []
 
-  const current = currentCycleNumber(calendar.cycleStart, calendar.cycleLength)
-  return buildCycles({
-    cycleStart: calendar.cycleStart,
-    cycleLength: calendar.cycleLength,
-    dates,
-  }).map((cycle) => ({
+  const custom = new Set((calendar.cycles ?? []).map((cycle) => cycle.number))
+  const current = currentCycleNumber({ ...calendar, cycleStart })
+  return buildCycles({ ...calendar, cycleStart, dates }).map((cycle) => ({
     number: cycle.number,
     startDate: toDateInputValue(cycle.start),
     endDate: toDateInputValue(cycle.end),
     label: formatCycleRange(cycle),
     isCurrent: cycle.number === current,
+    isCustom: custom.has(cycle.number),
   }))
 }
 

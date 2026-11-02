@@ -25,7 +25,7 @@ import { deletePost, setPostShared, setPostStatus } from "../actions"
 
 /**
  * The team's controls on a card: move the status, publish to the client, and
- * (for admins) delete.
+ * (for admins and managers) delete.
  *
  * Status lives here as well as in the editor because moving eight reels from
  * "shoot pending" to "in production" is the single most repeated action in a

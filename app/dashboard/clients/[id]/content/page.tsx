@@ -47,7 +47,9 @@ export default async function ClientContentPage({ params }: { params: Promise<{ 
   if (!canManage) notFound()
 
   const calendar = await getCalendarForClient(actor, id)
-  const canDelete = can(actor, "content:delete")
+  // Managers may delete a post but not the whole calendar.
+  const canDeleteCalendar = can(actor, "content:delete")
+  const canDeletePost = can(actor, "content:deletePost")
 
   const header = (
     <>
@@ -111,7 +113,7 @@ export default async function ClientContentPage({ params }: { params: Promise<{ 
     calendar.posts.map((post) => post.scheduledFor),
   )
   const currentCycle = calendar.cycleStart
-    ? currentCycleNumber(calendar.cycleStart, calendar.cycleLength)
+    ? currentCycleNumber({ ...calendar, cycleStart: calendar.cycleStart })
     : null
   const progress = calendarProgress(calendar.posts)
   const feedback = calendar.posts.reduce((sum, post) => sum + post._count.comments, 0)
@@ -157,7 +159,7 @@ export default async function ClientContentPage({ params }: { params: Promise<{ 
           editsFolderUrl: calendar.editsFolderUrl,
         }}
         canManage
-        canDelete={canDelete}
+        canDelete={canDeleteCalendar}
       />
 
       {/* Uploads need both halves: a service account to write with, and a folder
@@ -179,7 +181,7 @@ export default async function ClientContentPage({ params }: { params: Promise<{ 
         cycles={cycles}
         viewerRole={actor.role}
         canManage
-        canDelete={canDelete}
+        canDelete={canDeletePost}
         canComment
         // Approving is the client's call; on this side only the Super Admin
         // records one for them.
